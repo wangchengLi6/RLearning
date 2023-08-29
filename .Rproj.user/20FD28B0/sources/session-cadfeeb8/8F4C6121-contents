@@ -1,0 +1,633 @@
+---
+title: "Vignette Title"
+author: "Vignette Author"
+date: "`r Sys.Date()`"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+    toc: true
+    number_sections: true
+vignette: >
+  %\VignetteIndexEntry{Vignette Title}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+
+```{r setup, include=FALSE}
+library(formatR)
+library(extrafont)
+knitr::opts_chunk$set(echo = TRUE,fig.height = 5,fig.width = 7)
+
+# par(pin)
+# fonts()
+# font_import(prompt = F)
+```
+
+
+# Introduction
+
+## Why R?
+
+学习一门语言的第一个问题是为什么要学习这门语言。Hadley Wickham (2019) 在他的书 [Advanced r](https://adv-r.hadley.nz/introduction.html) 中给出了如下的11点理由：
+
+1.  免费、开源、易于获取且可以运行于所有的主流平台
+2.  多元、包容的R语言社区
+3.  非常丰富的R包，设计数据分析的方方面面
+4.  非常丰富的工具可以帮助你交流你的成果
+5.  强大的 IDE
+6.  包含了统计学前沿研究的代码
+7.  根植于语言底层的对数据分析的支持
+8.  函数式编程的思想
+9.  Rstudio 公司对于R语言发展的大力支持
+10. 元编程工具
+11. 提供了嵌入 C, C++, Fortran 语言的接口
+
+## 遇到问题该如何寻找解决方案
+
+-   R语言自带的文档：`help(sum)` （帮助文档）； `?sum` （等价于`help`函数）； `??sum` （模糊搜索）
+
+-   百度、CSDN
+
+-   Google
+
+-   ChatGPT等一系列大模型
+
+-   人工求助（同学、师兄师姐、老师、网上发帖）
+
+```{r eval=FALSE, include=FALSE}
+# 一般来说，如果来问我，我也是先查文档，再选择一个搜索途径。
+```
+
+## 本报告所使用的参考资料
+
+这一节内容大多数来源于[李东风老师](https://www.math.pku.edu.cn/teachers/lidf/)所撰写的[《R语言教程》草稿](https://www.math.pku.edu.cn/teachers/lidf/docs/Rbook/html/_Rbook/index.html)的第VI部分第26章，
+和本节课上一位助教史宏炜师姐的材料。
+
+此外还参考了Hadley Wickham (2019)所撰写的[Advanced r](https://adv-r.hadley.nz/introduction.html)第二版。
+
+## 本报告所使用的数据集
+
+这一节课内容所使用的数据集均来自于R自带的数据集，这些数据集均集成在R包 `datasets` 中，并且通常可以直接调用。
+使用 `help(<name of dataset>)` 可以获得数据集的介绍。
+
+# 可视化 >> 基本绘图功能
+
+绘图是R语言非常重要的功能，能够轻松、快捷地绘制丰富的图像是R语言区别与其它语言的重要特征。
+
+大体上讲，R语言的绘图功能分为两大部分:
+
+- 其一是基本绘图函数，主要是自带包 `graphics` 中的函数，包括 `plot()`, `lines()` 等。使用这些函数可以非常简单且快速地绘制出大多数基本图形，但如果对于图形有更多细节上的要求，则需要做出比较多且复杂的修改。
+
+- 其二是以 `ggplot2` 为代表的绘图包。使用 `ggplot2` 包绘制图形需要一定的基础知识，但在掌握之后能够非常方便地绘制出所需要的图像。
+
+在这一节，我们将首先介绍R语言的基本绘图函数，在第二节再介绍 `ggplot2` 包。
+R语言的基本绘图功能可以分为高级绘图函数和低级绘图函数。其区别在于，高级绘图函数通常能够绘制一个完整的图形，而低级绘图函数通常用于在高级绘图函数的基础上修改图形。我们首先讲常见的高级绘图函数。
+
+## 高级绘图函数
+
+### 柱状图和 `table` 函数
+
+#### 直接使用 `barplot` 函数
+
+首先使用 `summary` 和 `head` 函数查看数据集的结构，使用 `help` 查看数据集的介绍。
+
+```{r}
+summary(longley)
+head(longley)
+# help(longley)
+```
+
+```{r}
+# barplot 接受两种数据格式，公式和向量
+par(mfrow = c(1,2))
+## 公式方法
+barplot(GNP~Year,data = longley)
+## 向量方法，可以看到向量方法并没有横坐标的信息，也没有横轴和纵轴的信息，而是被序号替代
+barplot(longley$GNP) 
+par(mfrow = c(1,1))
+```
+
+####  `table` 函数和 `barplot` 函数
+
+```{r}
+r1 = rpois(100,5)
+res1 = table(r1)
+barplot(res1)
+```
+
+####  `barplot` 的参数
+
+```{r}
+# 如果颜色数量和类别数量不一致，则会不断循环所提供的颜色
+barplot(res1, main="参数为5的possion分布", 
+        col=c("brown2", "aquamarine1","aliceblue")) 
+```
+
+```{r}
+# 使用函数 colors() 可以查看不同颜色的名称
+head(colors(),6)
+```
+
+####  基于列联表的堆叠柱状图和并排柱状图
+
+```{r}
+head(warpbreaks)
+summary(warpbreaks)
+# 第一条命令相当于直接指定是warpbreaks的wool和tension属性，第二条命令则是创建一个with环境，此时所使用的wool和tension属性来自于warpbreaks数据集
+res2 = table(warpbreaks$wool,warpbreaks$tension)
+res2 = with(warpbreaks, table(wool, tension))
+print(res2)
+```
+
+```{r}
+fp = function(){
+  par(mfrow = c(1,2))
+  on.exit(par(mfrow = c(1,1)))
+  barplot(res2
+        ,legend = T # 选择是否显示图例
+        )
+  barplot(res2
+        ,beside = T # 并排还是堆叠
+        # ,legend = T # 选择是否显示图例
+        )
+}
+fp()
+```
+
+#### `barplot` 函数的其它参数：
+
+```{r}
+barplot(res2, beside=TRUE, legend=TRUE,
+        main='不同种类',
+        ylim=c(0, 20), # y轴的范围
+        xlim=c(-1, 6), # x轴的范围，对于柱状图而言，第一个柱子的横坐标是1，并以此类推
+        width=0.6, # 设置柱子的宽度
+        col=c("brown2", "aquamarine1"))
+```
+
+### 直方图和密度估计
+
+直方图和密度估计通常用来展示一维变量的分布情况，我们首先使用 `hist` 函数绘制直方图，并使用 `density` 函数进行核密度估计。
+
+```{r}
+x = rnorm(30, mean=100, sd=1)
+print(round(x,2))
+```
+
+绘制直方图：
+
+```{r}
+hist(x)
+```
+
+估计核密度并使用 `lines` 函数将估计曲线添加至图像中。我们将在后文对 `lines` 做进一步说明。
+
+```{r}
+res1 = density(x)
+hist(x,
+     freq = F) # 该参数用于确定是纵轴是频率还是频数
+lines(res1)
+```
+
+`hist` 函数共享大多数绘图函数都有的参数，如标题 `main`, 横轴/纵轴名称 `xlab`/`ylab`, 颜色 `col` 等。其较为独特且重要的参数是 `breaks`，其决定了直方图的区间长度。
+
+```{r}
+fp = function(x){
+  par(mfrow = c(2,2)) # 修改全局变量，使得图片默认排布为 2x2
+  on.exit(par(mfrow = c(1,1))) # 无论函数是否成功运行，都在最后执行括号内语句
+  hist(x,breaks = 4) # 给定一个数，但仅作为参考，并不是一定就是4根柱子
+  hist(x,breaks = c(min(x),97,99,101,102,max(x))) # 给定一个序列作为间断点
+  hist(x,breaks = function(x){length(x)/6}) # 给定一个函数用于计算
+  hist(x,breaks = function(x){quantile(x,probs = seq(0,1,by = 0.25))})
+}
+fp(x)
+```
+
+### 箱线图
+
+箱线图（Box Plot 或 Box-and-Whisker Plot）主要是从四分位数的角度出发 描述数据的分布，它通过最大值（$Q4$）、上四分位数（$Q3$）、中位数（$Q2$）、下四分位数（$Q1$）和最小值（$Q0$）五处位置来获取一维数据的分布概况。我们知道，这五处位置之间依次包含了四段数据，每段中数据量均为总数据量的 1/4。通过每一段数据占据的长度，我们可以大致推断出数据的集中或离散趋势（长度越短，说明数据在该区间上越密集，反之则稀疏）
+
+对于函数 `boxplot` 来说，可以接受的数据类型包括三类：
+
+- 数值向量或以数值向量为列表的元素
+
+- 矩阵
+
+- 公式
+
+我们分别展示如下
+```{r}
+x1 = rnorm(50)
+x2 = rnorm(50)
+list1 = list(x1,x2)
+mat1 = cbind(x1,x2)
+fp = function(){
+  par(mfrow = c(2,2))
+  on.exit(par(mfrow = c(1,1)))
+  boxplot(x1,main = "vector")
+  boxplot(list1,main = "list with vectors as elements")
+  boxplot(mat1,main = "matrix")
+  boxplot(breaks~wool,data = warpbreaks,main = "formula")
+}
+fp()
+```
+
+额外参数解析：
+
+- range 是一个延伸倍数，决定了箱线图的末端（须）延伸到什么位置，这主要是考虑到离群点的原因，在数据中存在离群点的情况下，将箱线图末端直接延伸到最大值和最小值对描述数据分布来说并不合适（图形缺乏稳健性），所以 R 中的箱线图默认只将图形延伸到离箱子两端$range\times(Q3−Q1)$处，即上下四分位数分别加/减内四分位距（Interquartile Range，简称 $IQR:=Q3−Q1$）的倍数，超过这个范围的数据点就被视作离群点，在图中直接以点的形式表示出来
+
+- width 给定箱子的宽度
+
+- varwidth 为逻辑值，若为TRUE，那么箱子的宽度与样本量的平方根成比例，这在多批数据同时画多个箱线图时比较有用，能进一步反映出样本量的大小
+
+- notch 也是一个有用的逻辑参数，它决定了是否在箱子上画凹槽，凹槽所表示的实际上是中位数的一个区间估计，其计算式为 $Q_2 \pm 1.58\frac{IQR}{\sqrt{n}}$，区间置信水平为$95\%$，在比较两组数据中位数差异时，我们只需要观察箱线图的凹槽是否有重叠部分，若两个凹槽互不交叠，那么说明这两组数据的中位数有显著差异（p 值小于 0.05）
+
+- horizontal 为逻辑值，设定箱线图是否水平放置
+
+```{r}
+boxplot(
+  breaks~wool,
+  data = warpbreaks[1:45,],
+  main = "formula",
+  notch = T,
+  horizontal = T,
+  varwidth = T, # 箱子越宽说明样本量越大
+  col = rainbow(2) # 类似于 colour() 函数，但是是从彩虹色中取色
+)
+```
+
+
+### QQ图
+
+使用 `qqnorm` 和 `qqline` 函数可以绘制正态QQ图，当样本来自于正态总体时，正态QQ图的散点近似在一条直线周围。
+
+QQ图的一般做法如下：假定 $n$ 个观测值 $y_{(1)},\cdots,y_{(n)}$ 已经按从小到大的顺序排列，则 $y_{(i)}$ 是总体 $\frac{i}{n}$ 分位数的估计，设 $x_{(i)}$ 是标准正态分布总体的 $\frac{i}{n}$ 分位数，则样本来自 $\mathcal{N}(\mu,\sigma^2)$ 时，有
+$$
+\begin{aligned}
+y_{(i)} &\approx F^{-1}(\frac{i}{n}),
+\\
+x_{(i)} &= \Phi^{-1}(\frac{i}{n}) = F^{-1}(\frac{i}{n})*\sigma + \mu.
+\end{aligned}
+$$
+其中 $F$ 和 $\Phi$ 分别为 $\mathcal{N}(\mu,\sigma^2)$ 和 $\mathcal{N}(0,1)$ 的分布函数。进而有 $y_{(i)} \approx \mu + \sigma x_{(i)}$ 。因此，如果以 $x_{(i)}$ 为横坐标， $y_{(i)}$ 为纵坐标绘图，则绘制出的点应当位于一条截距为 $\mu$ ，斜率为 $\sigma$ 的直线附近。在实际处理时，为了保证结果的合理性，还需要对分位数进行连续性调整。
+
+下列程序用于绘制正态QQ图：
+
+```{r}
+x1 = rnorm(100,0,1)
+x2 = rnorm(100,3,2)
+x3 = rexp(100)
+x4 = rgamma(100,5)
+
+fp = function(){
+  par(mfrow = c(2,2))
+  on.exit(par(mfrow = c(1,1)))
+  qqnorm(x1,main = "Q-Q Plot :: N(0,1)")
+  qqline(x1)
+  qqnorm(x2,main = "Q-Q Plot :: N(3,4)")
+  qqline(x2,col = "red")
+  qqnorm(x3,main = "Q-Q Plot :: Exp(1)")
+  qqline(x3,lty = 2)
+  qqnorm(x4,main = "Q-Q Plot :: Gamma(5)")
+  qqline(x4)
+}
+fp()
+```
+
+
+### 散点图（折线图/曲线图的额外做法、散点图矩阵）
+
+散点图通常可以用来判断两个变量之间的关系（如趋势、分布）。我们使用数据集 `mtcars` 示范，首先绘制汽车重量(wt)和汽车油耗(每加仑汽油所能行驶的距离，mpg)的散点图。此外，使用 `pch`, `col` 和 `cex` 参数可以分别调整点的性状、颜色和大小。
+
+```{r}
+fp = function(){
+  par(mfrow = c(1,2))
+  on.exit(par(mfrow = c(1,1)))
+  with(mtcars,{
+    plot(mpg~wt)
+    plot(mpg~wt,col = 2,cex = 2,pch = 2)
+  })
+}
+fp()
+```
+
+可以看到越重的车辆通常有着更高的油耗（即每加仑汽油能够行驶的距离越短）。
+
+通过调整颜色形式，我们可以使用颜色来区分车辆类型，通过调整大小的形式，可以绘制气泡图。
+
+```{r}
+with(
+  mtcars,plot(mpg~wt,
+              col = (am == 0)+1, # am = 0 为自动挡，1 为手动挡
+              cex = (hp-min(hp))/(max(hp)-min(hp))+0.7, # hp 为车辆总马力
+              pch = 16)
+)
+```
+
+散点图矩阵：散点图可以展示两个变量之间的关系，那么当我们遇到多个变量想要粗略分析变量间的两两关系，则可以使用 `pairs` 函数绘制散点图矩阵。
+
+```{r}
+pairs(mtcars[c("mpg","disp","drat","wt")])
+```
+
+### 多维密度估计
+
+在第(2)节，我们使用直方图展示了一维变量的分布情况，并使用 `density` 函数估计了一维变量的密度函数。
+类似地，我们也可以使用图像来展示二维变量的分布情况。
+第一种思路是绘制散点图并调整颜色的透明度以展示二维点的分布情况。
+第二种思路是在第一种思路的基础上，使用核密度估计方法对原先离散的散点图光滑化。
+第三种思路则是尝试估计密度函数，并绘制二维变量的密度函数图像。
+
+作为案例，我们考虑样本来自于两个总体，其一是标准二元正态分布，其二是与原点距离接近0.5的一个圆环，并在环上近似均匀分布。
+
+```{r}
+library(MASS)
+n = 4000
+x1 = mvrnorm(n,c(0,0),diag(c(1,1)))
+x2.tep1 = runif(n/10,0,2*pi)
+x2.tep2 = runif(n/10,1,1.2)
+x2 = cbind(x2.tep2*cos(x2.tep1),x2.tep2*sin(x2.tep1))
+x = rbind(x1,x2)
+fp = function(){
+  par(mfrow = c(1,2))
+  on.exit(par(mfrow = c(1,1)))
+  plot(x,col = rainbow(1))
+  plot(x,col = rainbow(1,alpha = 0.1))
+}
+
+fp()
+```
+
+使用 `smoothScatter` 函数，我们可以绘制平滑后的散点图。该函数的平滑思路与一维情况下类似，均使用核密度估计的方法进行加权。绘制结果如下，其中颜色越深的地方说明密度概率越大。
+
+```{r}
+smoothScatter(x)
+```
+
+最后，我们展示如何使用 `bkde2D` 估计二维密度函数并将其可视化。需要注意的是， `smoothScatter` 函数同样使用了 `bkde2D` 函数来估计二维密度函数。
+
+```{r}
+library(KernSmooth)
+res1 = bkde2D(x,0.15)
+fp = function(){
+  par(mfrow = c(1,2))
+  on.exit(par(mfrow = c(1,1)))
+  with(res1,persp(x1,x2,fhat))
+  with(res1,persp(x1,x2,fhat,theta = 30,phi = 50))  # 使用 theta 和 phi 参数可以调整三维图的观看角度。
+}
+fp()
+```
+
+```{r}
+with(res1,contour(x1,x2,fhat))
+```
+
+```{r}
+with(res1,image(x1,x2,fhat))
+```
+
+### 曲线图/折线图
+
+折线图、曲线图可以展示两个变量之间潜在的函数关系，通常用于绘制某一变量随时间的变化趋势或绘制某一函数图像。使用 `plot` 函数并将调整参数 `type = "l"` 便可以绘制折线图。
+
+```{r}
+plot(1937:1960,airmiles,type = "l",main = "航空里程的变化趋势")
+```
+
+绘制函数图像的方法
+
+```{r}
+x = seq(0,2,0.01)
+y = exp(x)
+plot(x,y,type = "l",main = "使用 plot 函数绘制指数函数图像")
+```
+
+此外我们也可以使用 `curve` 函数绘制函数图像：
+
+```{r}
+curve(exp(x),xlim = c(0,2),main = "使用 curve 函数绘制指数函数图像")
+```
+
+
+## 低级绘图函数
+
+除了以上提到的高级绘图函数，R语言同样提供了很多低级绘图函数。熟练地使用这些函数可以帮助我们在高级绘图函数的基础上修改图形。
+
+### abline() curve()
+
+`abline` 和 `curve` 函数可以在已有图像上绘制直线和曲线。例如，我们可以将理想状况下的函数关系绘制在图中，与观测到的样本情况进行对比。
+
+```{r}
+par(mfrow = c(1,2))
+x1 = rnorm(100)
+y1 = x1 + rnorm(100)
+y2 = x1**2 + rnorm(100)
+fp = function(){
+  par(mfrow = c(1,2))
+  on.exit(par(mfrow = c(1,1)))
+  plot(x1,y1)
+  abline(a = 0, b = 1,col = "red") # a 为截距，b为斜率。
+  abline(h = 0,col = "purple") # 通过设置h或v可以绘制水平线和垂直线
+  abline(v = 0,col = "green")
+  plot(x1,y2)
+  curve(x**2,add = T,col = 2) # add：将曲线绘制在已有图像上，还是绘制在新的图像上
+}
+fp()
+
+```
+
+### points()
+
+`points` 和 `lines` 函数可以向已有图像上添加点或者折线。
+
+```{r}
+## 使用points向已有图像上添加点
+fp = function(){
+  par(mfrow = c(1,2))
+  on.exit(par(mfrow = c(1,1)))
+  # 未添加点
+  curve(sin(x),xlim = c(0,2*pi),main = "未添加点的图像")
+  # 添加点后
+  curve(sin(x),xlim = c(0,2*pi),main = "添加点后的图像")
+  points(c(0,pi/2,pi,pi*3/2,pi*2),sin(c(0,pi/2,pi,pi*3/2,pi*2)),col = 2, pch = 16,cex = 2)
+}
+fp()
+```
+
+```{r}
+## 使用lines向已有图像上添加直线
+fp = function(){
+  par(mfrow = c(2,2))
+  on.exit(par(mfrow = c(1,1)))
+  x = seq(0, 2*pi, length=200)
+  y1 = sin(x)
+  y2 = cos(x)
+  # 未添加
+  plot(x, y1, type='l', lwd=2, col="red",main = "未添加曲线")
+  # 添加后
+  plot(x, y1, type='l', lwd=2, col="red",main = "已添加曲线")
+  lines(x, y2,lwd=2, col="blue")
+  
+  x = rnorm(100)
+  vx = seq(-4,4,0.01)
+  # 未添加
+  hist(x,main = "未添加曲线",freq = F)
+  # 添加后
+  hist(x,main = "已添加标准正态曲线",freq = F)
+  lines(vx,dnorm(vx),col = 2)
+}
+fp()
+```
+
+### legend()
+
+R语言的基本绘图函数通常不自带图例功能，因此需要自行添加。使用 `legend` 函数可以根据需要添加图例。
+一般来说，图例包括线条颜色、线条类型和对应的标签，如果图像中含有点，也可以把点的信息（形状）添加进去。
+此外，图例还需要设置图例的显示位置，可以使用字符串或者坐标来控制图例的显示位置。
+
+```{r}
+x <- seq(0, 2*pi, length=200)
+y1 <- sin(x)
+y2 <- cos(x)
+plot(x, y1, type='l',lty = 1, lwd=2, col="red")
+lines(x, y2,lty = 2, lwd=2, col="blue") # 添加线条
+legend(0, -0.5, # 使用横纵坐标控制图例位置，(0,-0.5) 是图例左上角所处的位置
+       col=c("red", "blue"), # 指定图例的颜色
+       lty=c(1,1), # 指定图例中线条的类型
+       lwd=c(2,2), # 指定图例中线条的宽度
+       pch = c(1,2), # 指定图例中点的形状，即使图中没有画点
+       legend=c("sin", "cos") # 指定图例中的标签
+       )
+legend("top", # 使用字符串控制图例位置，可选项包括 "left" "top" "right" "bottom"
+       col=c("red", "blue"), # 指定图例的颜色
+       lty=c(1,1), # 指定图例中线条的类型
+       lwd=c(2,2), # 指定图例中线条的宽度
+       legend=c("正弦函数", "余弦函数") # 指定图例中的标签
+       ,title = "函数类型") # 指定图例的标题
+```
+
+### axis()
+
+在 `plot` 函数中用 `axes=FALSE` 可以取消自动的坐标轴。用 `box()` 函数画坐标边框。用 `axis` 函数单独绘制坐标轴。 `axis` 的第一个参数取 `1,2,3,4`，分别表示横轴、纵轴、上方和右方。 `axis` 的参数 `at` 为刻度线位置，labels为标签。 如
+
+```{r}
+fp = function(){
+  par(mfrow = c(2,2))
+  on.exit(par(mfrow = c(1,1)))
+  x <- c('一月'=15, '二月'=20, 
+       '三月'=18, '四月'=22)
+  # 默认情况
+  plot(seq(along=x), x, type='b', lwd=3, main='默认情况', xlab='', ylab='销售额')
+  # 取消默认的坐标轴后
+  plot(seq(along=x), x, 
+       axes=FALSE, # 取消默认的坐标轴
+       type='b', # 同时绘制点和线
+       lwd=3,
+       main='取消默认的坐标轴后',
+       xlab='', ylab='销售额')  
+  # 只添加 box 
+   plot(seq(along=x),x,axes=FALSE,type='b',lwd=3,main='只添加box',xlab='', ylab='销售额')
+   box()
+  # 只添加 左边和下边 的坐标轴
+   plot(seq(along=x),x,axes=FALSE,type='b',lwd=3,main='只添加左边和下边的坐标轴',xlab='', ylab='销售额')  
+  axis(2) # 纵轴
+  axis(1, at=seq(along=x), labels=names(x)) # 横轴
+}
+fp()
+```
+
+### text()
+
+可以使用 `text` 函数为图像添加文字。
+
+```{r}
+with(mtcars, plot(wt, mpg))
+lm1 <- lm(mpg ~ wt, data=mtcars)
+abline(lm1, col='red', lwd=2)
+a <- coef(lm1)[1]
+b <- coef(lm1)[2]
+text(4, 30, # 同样是坐标确定位置
+     adj=0, '线性回归:')
+text(4, 27, adj=0,
+    substitute(hat(y) == a + b*x,
+    list(a=round(coef(lm1)[1], 2), 
+         b=round(coef(lm1)[2], 2))))
+```
+
+## 补充
+
+### 图像参数
+
+大多数绘图函数共享着某些常用的参数，如颜色、横纵坐标轴、标题等等，这里，我们提供一个网站供大家参考。
+[参数详解](https://blog.csdn.net/glodon_mr_chen/article/details/79293615)。
+事实上，这些内容在R语言的文档中均有详细介绍，使用 `help(plot)` 或 `?plot` 即可查看。
+只是说文档均由英文撰写。
+
+### 如何多图同时绘制
+
+使用函数 `par` 可以调整绘图时的某些属性，其中 `mfrow` 可以用于控制一幅图中有多少子图，默认是1行1列。
+需要注意的是，在绘制之后，最好将参数调整为默认的1行1列，否则下一次绘图仍然会按照调整后的参数进行。
+
+```{r}
+par(mfrow = c(2,2))
+x = rnorm(100)
+y = x**2+rnorm(100)
+hist(x)
+qqnorm(x)
+plot(x,y,main = "y~x")
+plot(y,x,main = "x~y")
+```
+
+```{r}
+par(mfrow = c(1,1))
+hist(x)
+```
+
+### 如何导出图像
+
+Rstudio提供了图形化按钮用来导出图像。同时也可以直接使用代码行的形式导出图像。
+```{r}
+# png(file='fig-hw.png', # 不提供则默认为弹出窗口
+#     height=1000, width=1000)
+# with(d.class, plot(height, weight,
+#                    main='体重与身高关系'))
+# dev.off() # 结束使用并输出图像，如果是窗口则没有保存。
+```
+
+使用 `help(png)` 查看如何使用。此外，使用函数 `pdf` 也可以输出 pdf 格式的图像。(`help(pdf)`)。
+
+## 练习
+
+使用房价数据 `./houseprice_t.csv` 进行分析。
+
+```{r eval=FALSE, include=FALSE}
+hp = read.csv("./houseprice.csv",stringsAsFactors = T)
+head(hp)
+hp.new = data.frame(
+  "price" = hp$`销售价格`,
+  "bedroom_more_than_2" = (hp$`卧室数` >= 3),
+  "washroom_more_than_2" = (hp$`浴室数` >= 3),
+  "size" = hp$`建筑面积`,
+  "score" = hp$房屋评分
+)
+summary(hp.new)
+hp.new$bedroom_more_than_2 = factor(hp.new$bedroom_more_than_2)
+levels(hp.new$bedroom_more_than_2) = list("No less than 3" = "TRUE","Less than 3" = "FALSE")
+hp.new$washroom_more_than_2 = factor(hp.new$washroom_more_than_2)
+levels(hp.new$washroom_more_than_2) = list("No less than 3" = "TRUE","Less than 3" = "FALSE")
+write.csv(hp.new,"./houseprice_t.csv")
+```
+
+0. 了解表格的结构（使用 `summary` 和 `head` 函数）
+
+1. 检查销售价格是否符合正态分布，如果不符合，考虑销售价格的对数化。（使用两种图像来展示销售价格是否符合或接近正态分布）
+
+2. 考虑卧室数量和浴室数量的关系，并使用柱状图展示这一关系。
+
+3. 使用图像展示销售价格和卧室数的关系，使用图像展示销售价格和房屋面积的关系。
+
+4. 使用图像展示房屋价格、建筑面积、停车场面积三个变量的联合分布。
+
+5. 考虑价格对房屋面积和卧室数进行回归，并思考如何绘制回归曲线以展示结果。
