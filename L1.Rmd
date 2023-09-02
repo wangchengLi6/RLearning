@@ -1,6 +1,6 @@
 ---
-title: "Vignette Title"
-author: "Vignette Author"
+title: "L1 数据可视化"
+author: "Wangcheng Li"
 date: "`r Sys.Date()`"
 output:
   prettydoc::html_pretty:
