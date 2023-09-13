@@ -1,0 +1,9 @@
+"0","library(formatR)"
+"0","library(extrafont)"
+"2","Registering fonts with R
+"
+"0","knitr::opts_chunk$set(echo = TRUE,fig.height = 5,fig.width = 7)"
+"0",""
+"0","# par(pin)"
+"0","# fonts()"
+"0","# font_import(prompt = F)"

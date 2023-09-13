@@ -1,0 +1,239 @@
+---
+title: "L4 SVD分解和图像压缩"
+author: "Wangcheng Li"
+date: "`r Sys.Date()`"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+    toc: true
+    number_sections: true
+vignette: >
+  %\VignetteIndexEntry{Vignette Title}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+
+```{r setup, include=FALSE}
+library(formatR)
+library(extrafont)
+knitr::opts_chunk$set(echo = TRUE,fig.height = 5,fig.width = 7)
+
+# par(pin)
+# fonts()
+# font_import(prompt = F)
+```
+
+
+# SVD 分解和图像压缩
+
+本节关于理论准备的知识参考了郭老师在群中提供的课件 《奇异值分解md》 和[知乎文章](https://zhuanlan.zhihu.com/p/399547902) 。
+
+## SVD分解
+
+谱分解实现了实对称矩阵的对角化，其结果非常优雅。一个自然的问题是非对称矩阵乃至于非方阵的对角化如何实现。这里，SVD分解（奇异值分解）就可以被认为是谱分解的一个推广，它将任意矩阵通过正交变换成为对角矩阵。
+
+### 理论准备
+
+SVD分解是指，对于任意的矩阵 $A_{m\times n}$，有如下分解
+$$
+A_{m\times n} =
+U_{m\times m} D_{m\times n} V^T_{n\times n}
+=  U_{m\times m} 
+\begin{bmatrix}
+  D_{r\times r} & 0
+  \\
+  0 & 0
+\end{bmatrix}
+V^T_{n\times n}
+\tag{1}
+$$
+其中 $U$ 和 $V$ 均为正交矩阵， $D_r$ 为对角矩阵，对角线元素为 $\sigma_1,\cdots,\sigma_r$ ， $r$ 为矩阵 $A$ 的秩。我们称 $\sigma_1 \ge \sigma_2 \ge \cdots \ge \sigma_r$ 为矩阵 $A$ 的奇异值。
+
+*直观理解*：可以想象，在线性代数中，我们总可以通过有限次行变换和列变换将任意矩阵变形为形如 $D$ 的矩阵。而我们知道，行列变换等价于左乘/右乘一个可逆矩阵。因此直观来看，只要将可逆矩阵进行正交化，就可以得到形如式(1) 的SVD分解。（此处仅为个人理解，仅供参考，如果有错误也可以交流）
+
+*理论证明*：存在性证明通常采用构造性证明思路，此处尝试构造正交矩阵 $U$ , $V$ 和 $D$.
+
+三个准备性的知识：
+
+(1) $A^{T}A$ 的特征值总是非负的（即半正定）
+
+(2) 如果有 $R^n$ 中的一组正交向量 $e_1,\cdots,e_s\ (s < n)$ ，则总可以将其扩充为 $R^n$ 中的一组正交基 $e_1,\cdots,e_s,\tilde{e}_{s+1},\cdots,\tilde{e}_{n}$。（证明省略）
+
+(3) $A^{T}A$ 的秩和 $A$ 相同。
+
+*正式证明*
+
+基于以上，我们考虑矩阵 $A^TA$ 的特征值 $\lambda_1,\cdots,\lambda_r,0,\cdots,0$ ，和相应的特征向量 $\alpha_1,\cdots,\alpha_n$ 。其中 $\lambda_1,\cdots,\lambda_r$ 为 $A^TA$ 的 $r$ 个非负特征值。
+
+进而考虑 $\alpha_i^T A^T A \alpha_j$ 的情况：
+$$
+\alpha_i^T A^T A \alpha_j = \lambda_j \alpha_i^T \alpha_j = 
+\begin{cases}
+\lambda_i, & i = j \le r
+\\
+0, &\mbox{else}
+\end{cases}
+\tag{2}
+$$
+
+此时考虑 $\frac{A\alpha_1}{\sqrt{\lambda_1}},\cdots,\frac{A\alpha_r}{\sqrt{\lambda_r}}$，有(2)式可知，这组向量正交。记 $\frac{A\alpha_i}{\sqrt{\lambda_i}} = u_i$，则容易有以下结论
+$$
+A(\alpha_1,\cdots,\alpha_r)_{n\times r} = 
+(u_1,\cdots,u_r)_{m \times r} 
+\begin{bmatrix}
+  \sqrt{\lambda_1} & & & \cdots\\
+  & \sqrt{\lambda_2} & & \\
+  \vdots & & \ddots& \\
+  & & & \sqrt{\lambda_r}
+\end{bmatrix}
+$$
+
+只需要注意到 $\alpha_i$ 长度为 $n$ ， $u_i$ 长度为 $m$。再将 $\alpha_1,\cdots,\alpha_r$ 拓展至 $\alpha_1,\cdots,\alpha_n$ 。将 $u_1,\cdots,u_r$ 拓展至 $u_1,\cdots,u_m$ 。就得到了矩阵 $U$ $V$ 和 $D$.
+
+<!-- 由于我们只关注非零部分，所以事实上如何拓展也并不是关注的重点。 -->
+
+### R语言关于特征值、特征矩阵的计算
+
+### R语言代码实现
+
+R语言中自带了一个svd分解的函数 `svd` ：
+
+```{r}
+A = matrix(c(1,1,1,1,
+             1,1,1,2,
+             1,1,1,1),3,4,byrow = T)
+# n = 3; p = 10
+# A = matrix(sample(1:(10*n*p), n*p), n, p)
+a1 = svd(A)
+```
+
+```{r}
+require(corpcor) # fast svd for small n, big p
+
+
+svd_func <- function(A) {
+  eig.val <- eigen(t(A)%*%A)$values
+  index <- (eig.val > 10e-5)
+  eig.val <- eig.val[index]
+  d <- sqrt(eig.val)
+  v <- eigen(t(A)%*%A)$vectors[,index]
+  u <- matrix(NA, nrow(A), length(eig.val))
+  for (i in 1:ncol(v)) {
+    u[,i] <- (A%*%v[,i])/d[i] 
+  }
+  return(list(d=d, u=u, v=v))
+}
+
+
+
+svd_func(A)
+fast.svd(A) # require(corpcor)
+```
+
+## 图像压缩
+
+对三个图层分别进行svd分解。
+
+```{r}
+img <- jpeg::readJPEG("./picture/svd-pic4.jpg")
+dim(img)
+plot(0:1, 0:1, type = "n", xlab = "", ylab = "")
+rasterImage(img, 0, 0, 1, 1)
+```
+
+```{r}
+svd_1 = svd(img[,,1])
+svd_2 = svd(img[,,2])
+svd_3 = svd(img[,,3])
+```
+
+以图层1为例，我们可以绘制奇异值的变化趋势。可以看到第一个奇异值远大于其余奇异值，而且奇异值序列迅速衰减到接近0。我们同样可以查看其余两个图层的奇异值变化情况。
+
+```{r}
+par(mfrow = c(2,2))
+plot(svd_1$d)
+plot(svd_2$d)
+plot(svd_3$d)
+par(mfrow = c(1,1))
+```
+
+进一步，我们首先使用第一个奇异值对应的向量来重建图像，观察图像的情况。
+
+```{r}
+new_img = array(NA,dim = dim(img))
+new_img[,,1] = pmax(pmin(svd_1$u[,1,drop = F] %*% svd_1$d[1] %*% t(svd_1$v[,1,drop = F]),1),0)
+new_img[,,2] = pmax(pmin(svd_2$u[,1,drop = F] %*% svd_2$d[1] %*% t(svd_2$v[,1,drop = F]),1),0)
+new_img[,,3] = pmax(pmin(svd_3$u[,1,drop = F] %*% svd_3$d[1] %*% t(svd_3$v[,1,drop = F]),1),0)
+
+plot(0:1, 0:1, type = "n", xlab = "", ylab = "")
+rasterImage(new_img, 0, 0, 1, 1)
+```
+
+可以看到，图像像素点的每一行和每一列都有着相似的趋势，这是因为该图像的像素数据的矩阵秩为1。
+显然，一个秩为1的矩阵只能显示出色彩的变化趋势，并没有任何细节。因此我们进一步考虑前两个奇异值来重构图像。
+为了方便后续使用，我们将重构图像写成一个函数。
+
+```{r}
+restruct_img = function(m,dimimg,svd_list){
+    
+  new_img = array(NA,dim = dimimg)
+  new_img[,,1] = pmax(pmin(svd_list[[1]]$u[,1:m,drop = F] %*% diag(svd_list[[1]]$d[1:m]) %*% t(svd_list[[1]]$v[,1:m,drop = F]),1),0)
+  new_img[,,2] = pmax(pmin(svd_list[[2]]$u[,1:m,drop = F] %*% diag(svd_list[[2]]$d[1:m]) %*% t(svd_list[[2]]$v[,1:m,drop = F]),1),0)
+  new_img[,,3] = pmax(pmin(svd_list[[3]]$u[,1:m,drop = F] %*% diag(svd_list[[3]]$d[1:m]) %*% t(svd_list[[3]]$v[,1:m,drop = F]),1),0)
+  
+  return(new_img)
+}
+
+img2 = restruct_img(2,dim(img),list(svd_1,svd_2,svd_3))
+
+plot(0:1, 0:1, type = "n", xlab = "", ylab = "")
+rasterImage(img2, 0, 0, 1, 1)
+```
+
+此时部分细节已经显现出来。我们进一步考虑更大的m，例如10.
+
+```{r}
+img10 = restruct_img(10,dim(img),list(svd_1,svd_2,svd_3))
+
+plot(0:1, 0:1, type = "n", xlab = "", ylab = "")
+rasterImage(img10, 0, 0, 1, 1)
+```
+
+那么选择怎样的m比较合适呢，一个选择是不断调整m，直到图像清晰。但图像清晰的标准是比较主观的，因此我们可以考虑用奇异值作为一个判断指标。我们绘制奇异值的累积贡献图：
+
+```{r}
+cumcontri = cumsum(svd_1$d)/sum(svd_1$d)
+plot(cumcontri,type = "l")
+abline(h = 0.8,col = 2,lty = 2)
+```
+
+可以看到，在20附近，结果已经接近0.8，可以认为前20个奇异值贡献了接近80%的信息。以0.8为界选择奇异值个数并绘制图像：
+
+```{r}
+imgcc = restruct_img(min(which(cumcontri > 0.8)),dim(img),list(svd_1,svd_2,svd_3))
+
+plot(0:1, 0:1, type = "n", xlab = "", ylab = "")
+rasterImage(imgcc, 0, 0, 1, 1)
+```
+
+可以看到，此时大楼的整体轮廓已经恢复的差不多了。
+
+查看此时存储信息的大小：
+
+```{r}
+m = min(which(cumcontri > 0.8))
+tep = list(
+  svd_1$d[1:m],svd_1$u[,1:m],svd_1$v[,1:m],
+  svd_2$d[1:m],svd_2$u[,1:m],svd_2$v[,1:m],
+  svd_3$d[1:m],svd_3$u[,1:m],svd_3$v[,1:m]
+)
+print(object.size(tep));print(object.size(img))
+```
+
+## 练习 
+
+- 自己选择一张图像来利用svd方法降维
+
+- 自行编写程序，以求解矩阵 $A$ 的加号逆 $A^{+}$

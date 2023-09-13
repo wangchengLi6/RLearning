@@ -1,0 +1,8 @@
+"0","p <- ggplot(data = mtcars,
+  mapping = aes(
+    x = wt,
+    y = mpg))
+"
+"2","Error in ggplot(data = mtcars, mapping = aes(x = wt, y = mpg)) : 
+  could not find function ""ggplot""
+"
