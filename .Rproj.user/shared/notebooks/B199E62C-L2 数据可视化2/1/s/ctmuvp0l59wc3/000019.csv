@@ -1,3 +1,0 @@
-"0","dcast.melt.air = dcast(melt.air,Month+Day~variable,value.var = ""value"")"
-"0","# 默认最后一列是值向量 或者通过value.var参数指定"
-"0","head(dcast.melt.air)"
