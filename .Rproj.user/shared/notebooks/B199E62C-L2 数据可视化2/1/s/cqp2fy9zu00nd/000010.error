@@ -1,1 +1,0 @@
-{"frames":[],"message":"Error in ggplot(data = mtcars, mapping = aes(x = wt, y = mpg)) : \n  could not find function \"ggplot\"\n"}

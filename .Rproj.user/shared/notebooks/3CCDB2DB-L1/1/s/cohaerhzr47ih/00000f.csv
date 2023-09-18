@@ -1,4 +1,0 @@
-"0","# barplot 接受两种数据格式，公式和向量"
-"0","par(mfrow = c(1,2))"
-"0","## 公式方法"
-"0","barplot(GNP~Year,data = longley)"

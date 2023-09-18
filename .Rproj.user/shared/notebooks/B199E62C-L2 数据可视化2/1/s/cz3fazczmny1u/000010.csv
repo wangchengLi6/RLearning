@@ -1,5 +1,0 @@
-"0","melt.air = melt(tep.air,id = c(""Month"",""Day""))
-"
-"2","Error in melt(tep.air, id = c(""Month"", ""Day"")) : 
-  could not find function ""melt""
-"
