@@ -1,0 +1,381 @@
+---
+title: "L7 R语言常用工具补充I"
+author: "Wangcheng Li"
+date: "`r Sys.Date()`"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+    toc: true
+    number_sections: true
+vignette: >
+  %\VignetteIndexEntry{Vignette Title}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse,quietly = T)
+library(magrittr,quietly = T)
+library(NHANES,quietly = T)
+```
+
+# R语言常用工具补充I
+
+本材料内容包括三个部分：
+
+- 管道符和管道符的使用
+
+- R语言中和分布相关的函数
+
+- R语言中自带的优化器
+
+## 管道符和其在探索性数据分析的应用
+
+tidyverse包是一个包含了dplyr、ggplot2、tibble等包的集合包，在library(tidyverse)时就可以看到一并被加载的包以及和其他包有冲突的函数。比起base R的函数和使用理念，使用tidyverse包进行数据处理和数据可视化会更加简洁、清晰易懂、富有逻辑性。在tidyverse学习中，非常重要的一个功能就是 `magrittr`  包中的管道符 `%>%` ，他和 `dplyr` 包配合后，可以大幅度提高数据处理代码的可读性。
+
+### 管道符的介绍和使用
+
+以下内容参考自[知乎专栏](https://zhuanlan.zhihu.com/p/59770889) 和 [CSDN专栏](https://blog.csdn.net/weixin_46128755/article/details/125989703).
+
+在数据分析中，我们通常需要对数据进行多步处理，以得到最终的结果。然而很多时候，我们只需要最终结果，过程中产生的中间量并不需要。如果将每一个中间量赋值给一个变量，这会使得代码过于冗余；如果使用嵌套的方法，则会使代码丧失可读性。我们以下面为例：
+
+```{r}
+# 我们希望将列表的内容合并成一个表格，进而对每一行求均值，对求出的均值计算方差
+## 方法一
+xdemo = list(rnorm(100),rexp(100),rpois(100,1))
+dp1 = do.call(rbind,xdemo)
+dp2 = colMeans(dp1)
+dp3 = var(dp2)
+
+## 方法二
+dp3 = var(colMeans(do.call(rbind,xdemo)))
+```
+
+在 `tidyverse` 和 `magrittr` 包中的管道符可以让我们较为优雅地实现这一步骤。管道符 `%>%` 的作用是将前一段代码的输出作为下一段代码的输入。以下总结了管道符的几种常见用法：
+
+```
+x %>% f 等价于 f(x)
+x %>% f(y) 等价于 f(x, y)
+x %>% f %>% g %>% h  等价于 h(g(f(x)))
+----------------------------------
+x %>% f(y, .) 等价于 f(y, x)
+x %>% f(y, z = .) 等价于 f(y, z = x)
+```
+
+举例：
+
+```{r}
+x = rpois(100,1)
+table(x) %>% barplot()
+0 %>% sin %>% cos # 等价于 cos(sin(0))
+```
+
+占位符：如果数据作为函数的第一个参数的话，是不需要placeholder的，但是如果是第二或者更后面的参数，就需要使用 . 作为占位符。
+
+例如：
+
+```{r}
+minus = function(x,y){x-y}
+1 %>% minus(2)
+1 %>% minus(.,2)
+1 %>% minus(2,.)
+```
+
+`%<>%` 表示将变量传入函数，得到的结果返回给原来的变量。不同于 `%>%` ， `%<>%` 在使用前还需要导入 `magrittr` 包。例如：
+
+```{r}
+x = c(1,2,3)
+x %<>% mean
+x
+```
+
+`%$%` 则可以实现类似 `with` 函数的功能，例如 `dt %$% f(name)` 等价于 `f(dt$name)`。
+
+回到最开始提及的案例，我们可以将其改写为如下代码：
+
+```{r}
+xdemo %>% 
+  do.call(rbind,.) %>%
+  colMeans %>%
+  var
+```
+
+可以看到，使用管道符能够让代码更加清晰直观地展示每一步是如何进行的，这使得代码更加简洁且清晰，提高代码的可读性，降低代码的维护难度。
+
+### 探索性数据分析的思路
+
+我们上手一份数据时，都需要对其进行初步的探索性分析，以了解数据的基本结构。尤其当我们对数据一无所知时，我们需要通过探索性分析来挖掘潜在的研究问题，以实现数据的价值。即使是已经有了明确的研究目标，我们也需要通过探索性分析来排除数据可能存在的质量问题。在这一节，我们将以探索性分析为例，讲解管道符在实际问题中的使用。以下内容参考自[R语言教程](https://www.math.pku.edu.cn/teachers/lidf/docs/Rbook/html/_Rbook/stat-eda.html#stat-eda-catuni)的29章
+
+以NHANES包的NHANES数据集为例。 这是一个规模较大的示例数据框， 可以看作是美国扣除住院病人以外的人群的一个随机样本， 有10000个观测，有76个变量， 主题是个人的健康与营养方面的信息。
+
+#### 数据结构
+
+使用 `dplyr::glimpse(NHANES)` 或者 `str(NHANES)` 来查看变量的结构。他们都可以查看数据框每一个变量的类型和部分取值。
+
+```{r}
+dplyr::glimpse(NHANES)
+# str(NHANES)
+```
+
+结果中<int>表示取整数值， <dbl>表示取浮点型值， <fct>表示因子， <chr>表示字符串类型。
+
+NHANES数据中包含了两次考察的结果， 所以每个受访者可能有两个观测， 少数受访者仅有一个， 也有的受访者有多个观测。 这样会使得变量的统计分析结果不易解释， 因此我们仅筛选其中SurveyYr为 `2011_12` 的观测， 并对每个ID仅保留最后一个观测， 生成数据框 `d_nhsub` 。这里，我们使用刚刚学习的管道符进行操作：
+
+```{r}
+d_nhsub <- NHANES %>%
+  filter(SurveyYr == "2011_12") %>%
+  group_by(ID) %>%
+  slice_tail(n=1) %>%
+  ungroup()
+dim(d_nhsub)
+```
+
+#### 查看单个变量的数据分布（分类变量）
+
+以 `Education` 变量为例， 计算其频数和百分比如下：
+
+```{r}
+d_nhsub %>%
+  count(Education) %>%
+  mutate(freq = n / sum(n))
+```
+
+这里可以看到有缺失值类别 `NA`。类似的计数功能可以使用 `base::table` 函数实现，但它默认省略缺失结果：
+
+```{r}
+d_nhsub %$% table(Education)
+d_nhsub %$% table(Education,useNA = "ifany")
+```
+利用管道符，继续绘制条形图：
+
+```{r}
+d_nhsub %>%
+  count(Education) %>%
+  mutate(freq = n / sum(n)) %>%
+  ggplot(.,aes(x = Education,y = freq)) + geom_col()
+```
+
+
+#### 查看单个变量的数据分布（连续变量）
+
+变量 Height 是2岁以上受访者的身高信息，使用R语言自带的函数 `summary` 可以查看特定变量的“五数信息”和均值：
+
+```{r}
+d_nhsub %$% summary(Height)
+```
+可以看到， `summary` 函数返回了连续型随机变量的最大值、最小值、四分位数和均值，以及缺失值的个数。
+
+类似的功能可以用 `dplyr::summarize()` 实现，其可以计算指定的统计量， 如：
+
+```{r}
+d_nhsub %>%
+  summarize(
+    n = n(),
+    mean = mean(Height, na.rm=TRUE),
+    median = median(Height, na.rm=TRUE),
+    std = sd(Height, na.rm=TRUE),
+    mse = mean((Height - 160)**2,na.rm = TRUE)
+  ) %>% knitr::kable()
+```
+
+使用直方图和密度估计图像可以了解连续型变量的分布情况：
+
+```{r}
+d_nhsub %>% 
+  ggplot(.,aes(x = Height,y = ..density..)) +
+  geom_histogram(bins = 50)+
+  geom_density(col = 2)
+```
+
+从直方图/密度估计图中不难发现，身高分布并不满足正态分布。为了进一步分析身高分布与正态分布的便宜，我们可以绘制正态QQ图：
+
+```{r}
+d_nhsub %>% ggplot(.,aes(sample = Height)) +
+  geom_qq()+
+  geom_qq_line()
+```
+
+这主要是由未成年和成年人的差异造成。为了验证这一观点，我们绘制18岁以上人群的身高分布：
+
+```{r}
+d_nhsub %>% 
+  filter(Age>=18) %>%
+  ggplot(.,aes(sample = Height))+
+  geom_qq()+
+  geom_qq_line()
+```
+
+偏离正态的情况大大缓解。
+
+此外，我们也可以通过箱线图和小提琴图来观察变量的分布情况：
+
+```{r}
+d_nhsub %>% ggplot(.,aes(x = "",y = Height)) +
+  geom_violin()
+# d_nhsub %>% ggplot(.,aes(x = "",y = Height)) +
+#   geom_boxplot()
+```
+
+#### 查看两个分类变量之间的关系（创建列联表）
+
+
+列联表和基于列联表衍生的一系列结果是探索性数据分析中非常常用的工具，它对于分析和展示两个分类变量之间的关系有非常重要的作用。考虑变量 `Gender` 和 `Education` ，我们尝试使用管道符来创建列联表：
+
+```{r}
+d_nhsub %>% 
+  count(Gender,Education) %>%
+  mutate(freq = n/sum(n))
+```
+
+`count` 函数简化了计数代码，它等价于下面这一份代码
+
+```{r}
+d_nhsub %>% 
+  group_by(Gender,Education) %>% 
+  summarise(n = n()) %>% 
+  ungroup()
+```
+
+进一步，我们可以在列联表的基础上计算每一组人身高信息的特点：
+
+```{r}
+d_nhsub %>% 
+  group_by(Gender,Education) %>% 
+  summarise(
+    n = n(),
+    MeanHeight = mean(Height,na.rm = T),
+    MedianHeight = mean(Height,na.rm = T),
+    SeHeight = var(Height,na.rm = T)
+  ) %>% 
+  ungroup() %>% 
+  mutate_if(is.double,round,digits = 2)
+```
+
+### 小结
+
+`tidyverse` 包被认为是R语言数据清理、分析工作中最关键的R包，它和它所依赖的一系列包让数据分析的代码更加清晰、直观、易于理解。但这并不意味着它只能在数据分析中使用，它所蕴含的编程思想是更值得我们学习的。尤其是管道符 `%>%`，它可以让代码进程直观化，让读者能够理解操作是怎样一步一步进行的。事实上，新版本（4.1及以上）的R语言已经内置（`base`包）支持管道符 `|>` ，它的用法和 `%>%` 非常相似。例如：
+
+```{r}
+1 |> sin() |> cos() |> round(2)
+```
+
+```{r}
+minus = function(x,y){x-y}
+1 |> minus(2)
+1 |> minus(x = _,2)
+1 |> minus(2,y = _)
+```
+
+R语言 `base` 包中的管道符与 `magrittr` 包的存在一些不同：
+
+- `base` 包的使用下划线 `_` 作为占位符，并且需要指定占位符所对应的参数名字。
+
+- `base` 包的管道过程中，函数必须带上括号。
+
+## R语言中的概率分布
+
+统计研究中经常会涉及到常见的概率分布，如正态分布、指数分布等。R语言内置了一部分常见的分布相关的函数，通常包含四类。以正态分布为例，使用 `?dnorm` 即可看到四个和正态分布相关的函数：
+
+- `dnorm(x)` 查看 `x` 点处分布的密度函数值
+
+- `pnorm(q)` 计算给定数值 `q` 对应的分布函数(CDF)取值
+
+- `qnorm(p)` 计算给定分位点对应的数值
+
+- `rnorm(n)` 生成 `n` 个服从该分布的随机变量
+
+这些函数的参数可以分为两类：
+
+- 一类是分布的参数，例如正态分布的均值和方差，指数分布的参数 $\theta$ ，二项分布的成功概率 `p`。有一些分布的分布参数有缺省值，例如正态分布默认是均值为零、方差为一的标准正态分布，有一些则必须指定参数，例如二项分布必须制定成功概率。
+
+- 另一类是函数功能上的参数，例如随机变量生成器 `rnorm` 需要指定生成样本的个数，分布函数计算可以指定计算尾部概率 `lower.tail = F`，密度函数可以计算对数密度值 `log = T`等。
+
+```{r}
+rnorm(1000) |> density() |> plot(type = "l")
+```
+
+```{r}
+seq(-4,4,0.01) |> dnorm() |> plot(type = "l")
+```
+
+```{r}
+seq(-4,4,0.01) |> pnorm() |> plot(type = "l")
+```
+
+```{r}
+qnorm(0.5) # 0.5 分位数
+```
+
+
+包括
+
+- 离散分布有 `dbinom`二项分布， `dpois`泊松分布， `dgeom`几何分布， `dnbinom`负二项分布， `dmultinom`多项分布， `dhyper`超几何分布。
+
+- 连续分布有 `dunif`均匀分布， `dnorm`正态分布， `dchisq`卡方分布， `dt` t分布(包括非中心t)， `df` F分布， `dexp`指数分布， `dweibull` 威布尔分布， `dgamma` 伽马分布， `dbeta` 贝塔分布， `dlnorm` 对数正态分布， `dcauchy` 柯西分布， `dlogis` 逻辑斯谛分布。
+
+在命令行中使用 `?Distributions` 可以查看。更多的分布在不同的R包中也有所支持，可以参见[R语言文档关于分布的内容](https://cran.r-project.org/web/views/Distributions.html).
+
+## R语言中自带的优化器
+
+### 优化问题
+
+优化问题是统计学研究中经常会碰到的问题，最经典的案例就是极大似然估计。对于优化问题，我们的第一反应是求导，尝试计算解析解。但大多数优化问题并不存在解析解，此时我们需要使用某些算法来计算优化问题的数值解。R语言中提供了相关函数以实现基本的优化功能。我们首先看优化问题的基本定义，对于函数 $f(x)$，我们希望找到使得 $f(x)$ 最小的点 $x*$，即：
+
+$$
+x* = \arg\min_{x \in \mathcal{X}} f(x)
+$$
+
+这里 $f(x)$ 通常被称作目标函数， $x*$ 被称为最小值点。对于最大化问题，只需要将目标函数转化为 $-f(x)$ 即可。以正态分布参数 $\mu$ 和 $\sigma^2$ 的极大似然估计为例（尽管他有解析解 $\bar{X}$ 和 $S^2$）：
+
+$$
+f(x) = L(\mu,\sigma^2) = -\frac{n}{2}\log(2\pi) - \frac{n}{2}\log{\sigma^2} - \frac{1}{2\sigma^2} \sum(X_i - \mu)^2
+$$
+
+通过求解 $\arg\max{L}$ 问题，就可以得到 $\mu$ 和 $\sigma^2$ 的极大似然估计。
+
+
+### 使用R中函数进行优化
+
+R中可以实现优化功能的函数包括 `optim()` `nlm()` 和 `optimize()`，其中 `optimize()` 仅适用于一元函数求取极值。接下来，我们将介绍如何使用 `ptim()` 函数实现优化问题。我们这里考虑一个简单的目标函数 $f(x,y) = x^2 + 2e^{x+1} + y^2$，其最小值点是 $(-1,0)$ 。
+
+```{r}
+## 目标函数
+obj.f = function(x){
+  return(x[1]**2 + 2*exp(x[1]+1) + x[2]**2)
+}
+
+optim(c(0,1),obj.f)
+```
+
+函数`optim()`缺省使用单纯型搜索算法， 此算法不要求计算梯度和海色阵，算法稳定性好，但是收敛速度比较慢。可以用选项 `method="BFGS"` 指定使用BFGS拟牛顿法，该方法会用到梯度信息。这时可以用 `gr=` 选项输入梯度函数，缺省使用数值微分计算梯度。如：
+
+```{r}
+optim(c(0,1),obj.f,method = "BFGS")
+```
+
+```{r}
+gri.f = function(x){
+  return(c(2*x[1] + 2*exp(x[1]+1),2*x[2]))
+}
+optim(c(0,1),obj.f,gr = gri.f,method = "BFGS")
+```
+
+最后，我们可以比较一下三种方法计算的速度。
+
+```{r}
+library(bench)
+mark(
+  optim(c(0,1),obj.f),
+  optim(c(0,1),obj.f,method = "BFGS"),
+  optim(c(0,1),obj.f,gr = gri.f,method = "BFGS"),
+  check = F,iterations = 1000
+)
+```
+
+可以看到，使用梯度信息后，算法的收敛速度有很大幅度的提升。
+
+### 练习
+
+最后留一个小练习，大家可以自行尝试使用 `optim` 函数实现正态分布两参数的极大似然估计。

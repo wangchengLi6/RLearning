@@ -1,0 +1,242 @@
+---
+title: "L9 回归模型和变量选择"
+author: "Wangcheng Li"
+date: "`r Sys.Date()`"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+    toc: true
+    number_sections: true
+vignette: >
+  %\VignetteIndexEntry{Vignette Title}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+```{r setup, include=FALSE}
+library(MASS)
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# L9 回归模型和变量选择
+
+
+
+## 多元线性回归模型
+
+多元线性回归模型是回归问题中最基本也是最常用的模型，模型的基本假定是响应变量Y关于自变量X的条件期望是X的线性函数：
+
+$$
+E(Y\mid X ) = g(X,\beta) = \beta_0 + \sum_{j=1}^{p}\beta_j X_j.
+$$
+
+使用最小二乘的思路计算 $\beta$ 的估计值：
+
+$$
+\beta^* = \arg\min_\beta \mathbf E \bigg(Y-g(X,\beta)\bigg)^2.
+$$
+
+其样本形式为 
+
+$$
+\hat\beta = \arg\min_\beta \sum_{i=1}^{n}\bigg(Y_i - \sum_{j=1}^{p}\beta_j X_j \bigg)^2.
+$$
+
+其矩阵形式为 
+
+$$
+\hat\beta = \arg\min_\beta ||\mathbf Y-\mathbf X\beta||_2^2.
+$$
+
+这里粗体的 $\mathbf X$ 和 $\mathbf Y$ 均为样本矩阵。利用多元函数求导法则，并分别验证一阶、二阶导条件，可以得到上面的这个优化问题的解析解：
+
+$$
+\hat\beta = (\mathbf X^T \mathbf X)^{-1} \mathbf X^T \mathbf Y
+$$
+
+基于此，我们可以在R语言中手动进行线性模型的估计。
+
+### 手动实现
+
+```{r}
+# 生成数据
+Sig = matrix(0,7,7)
+for(i in 1:7){
+  for(j in 1:7){
+    Sig[i,j] = 0.5**abs(i-j)
+  }
+}
+mu = rep(0,7)
+X = mvrnorm(100,rep(0,7),Sig)
+y = X %*% c(1,-1,0.5,-0.5,0.1,-0.1,0) + rnorm(100)
+```
+
+使用矩阵形式的解析解来计算 $beta$ 的估计值：
+
+```{r}
+beta.hat = solve(t(X)%*%X)%*%t(X)%*%y
+print(beta.hat)
+```
+
+由于我们通常还关心统计推断问题，因此我们需要 $\hat \beta$ 的方差估计。在此之前，我们需要估计 $Var(\epsilon|X)$ ，即误差项的方差。
+
+```{r}
+sigma.hat = sum((X%*%beta.hat - y)**2)/(100-7)
+print(sigma.hat)
+```
+
+由于 $\hat\beta = (X^T X)^{-1}X^T Y = \beta + (X^T X)^{-1}X^T \epsilon$ ，因此 $\hat\beta \sim N(\beta,var((X^T X)^{-1}X^T \epsilon)$.将方差项重写，得到 $(X^T X)^{-1} \sigma^2$，其中 $\sigma^2 = Var(\epsilon \mid X)$.
+
+```{r}
+var.hat = solve(t(X)%*%X)*sigma.hat
+print(var.hat)
+```
+
+此外，我们也可以计算$R^2$和调整$R^2$.
+
+```{r}
+(rsq = 1-sum((X%*%beta.hat - y)**2)/sum((y-mean(y))**2))
+(arsq = 1-sum((X%*%beta.hat - y)**2)/sum((y-mean(y))**2)*(100-1)/(100-7))
+print(rsq);print(arsq)
+```
+
+
+
+### R语言的实现
+
+显然，如此基本的函数在 R 语言里面也有相应的实现，R语言自带包 `stat` 中有函数 `lm` 可以实现多元线性回归模拟的计算。
+
+```{r}
+md = lm(y~X-1)
+summary(md)
+```
+
+与上面进行对比，发现R方的计算结果不一致，这主要是因为不考虑截距项的R方的计算方式不一样。
+
+```{r}
+rsq_lm = 1-mean(md$residuals**2)/mean(y**2)
+arsq_lm = 1-mean(md$residuals**2)/mean(y**2)*(100)/(100-7)
+```
+
+
+## 变量选择
+
+在实际问题中，变量选择是一个非常重要的步骤。通常来说，我们在最初建模时，会在模型中放入尽可能多的变量，因为我们并不知道哪些变量对响应变量Y有作用。而后，出于预测能力和模型可解释性的考量，我们会仅选择一部分变量建立最终的模型。因此，如何选择真正重要的变量是统计学研究中经久不衰的一个问题。
+
+### 子集选择
+
+子集选择的3个经典做法是：
+
+- 最优子集选择
+
+- 向前逐步回归
+
+- 向后逐步回归
+
+#### 最优子集选择
+
+最优子集选择的思路很简单，即比较所有可能的子模型，并依据某一指标选择所有子模型中最优的模型。选择的指标应当保证，纳入无关变量会使得模型的指标下降的同时，纳入重要变量会使得指标上升。可供使用的指标包括调整R方、交叉验证下的预测误差等。总的思路是对模型复杂度进行惩罚。
+
+算法的思路为：
+
+- 循环每一个子模型
+
+- 对每一个子模型计算预先选择的指标
+
+- 选择指标最优的子模型
+
+```{r}
+library(MASS)
+
+Sig = matrix(0,7,7)
+for(i in 1:7){
+  for(j in 1:7){
+    Sig[i,j] = 0.5**abs(i-j)
+  }
+}
+mu = rep(0,7)
+X = mvrnorm(100,rep(0,7),Sig)
+y = X %*% c(1,-1,0.5,-0.5,0.1,-0.1,0) + rnorm(100)
+
+n = 100;id_train = sort(sample(1:n,n*0.7))
+
+cur_mse = var(y)
+cur_comb = numeric(0)
+for(p in 1:7){
+  all_possible = combn(1:7,p)
+  num_possible = ncol(all_possible)
+  
+  for(j in 1:num_possible){
+    X_part = X[,all_possible[,j],drop = F]
+    dt = as.data.frame(cbind(X_part,y))
+    colnames(dt) = c(paste0("x",1:p),"y")
+    md_part = lm(y~.,data = dt)
+    yhat = predict(md_part,newdata = dt)
+    mse = mean(((yhat-y)**2)[-id_train])
+    if(mse < cur_mse){
+      cur_comb = all_possible[,j]
+      cur_mse  = mse
+    }
+  }
+}
+cur_comb
+```
+
+
+#### 向前/向后逐步回归
+
+显然，最优子集选择的计算量非常大，尤其是当变量维数非常高的时候。一个替代的做法是向前/向后逐步回归。以向前逐步回归为例，我们从一个零模型开始（即不选择任何变量），而后在零模型的基础上逐步增加变量，每次增加一个。增加变量时，我们选择能使模型指标最优的变量进入模型。当模型指标稳定时，我们不再增加变量。
+
+```{r}
+cur_comb = numeric(0)
+cur_mse = var(y[-id_train])
+for(p in 1:7){
+  new_mse = cur_mse
+  new_comb = NA
+  
+  not_in = (1:7)[-cur_comb]  
+  if(length(cur_comb)==0){not_in=1:7}
+  for(j in 1:length(not_in)){
+    # j = 2
+    ind = c(cur_comb,not_in[j])
+    dt = as.data.frame(cbind(X[,ind],y))
+    colnames(dt) = c(paste0("x",1:length(ind)),"y")
+    md_part = lm(y~.,data = dt[id_train,])
+    yhat = predict(md_part,newdata = dt)
+    mse = mean(((yhat-y)**2)[-id_train])
+    if(mse < new_mse){
+      new_mse = mse
+      new_comb = ind
+    }
+  }
+  if(cur_mse == new_mse){
+    message("stop")
+    break
+  }
+  cur_comb = new_comb
+}
+cur_comb
+```
+
+
+```{r eval=FALSE, include=FALSE}
+在变量选择的最后，大家可以简单思考一下什么是真正重要的变量。这一问题其实没有绝对的答案。统计学，以及计算机领域，预测能力是衡量变量重要性的核心；经济学、医学中，可能因果关系是变量重要性的主要指标。比如闻鸡起舞的故事
+```
+
+### 惩罚估计
+
+子集选择的一个问题是，当变量维数增加时，计算复杂度会快速增加。即使是向前/向后逐步回归，计算复杂度也会是变量维数的平方倍。此时，另外一个选择是使用惩罚估计。线性模型下两种常见的惩罚估计是岭回归和LASSO回归，这两种方法在R语言中都有相应的R包用于实现。
+
+#### 岭回归和LASSO回归在R语言中的实现
+
+```{r}
+library(glmnet)
+md.glm = glmnet(X,y,"gaussian",alpha = 0)
+plot(md.glm)
+```
+
+
+```{r}
+md.glm = glmnet(X,y,"gaussian",alpha = 1)
+plot(md.glm)
+```

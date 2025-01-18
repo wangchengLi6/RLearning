@@ -1,0 +1,192 @@
+---
+title: "L6 KNN 和 随机模拟"
+author: "Wangcheng Li"
+date: "`r Sys.Date()`"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+    toc: true
+    number_sections: true
+vignette: >
+  %\VignetteIndexEntry{Vignette Title}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+# KNN 和 随机模拟
+
+这份材料包括两部分内容，一是KNN算法在R语言中的实现。KNN方法是数据挖掘中的经典算法，在任何一种语言中都有着成熟的实现。因此，这一节课关于KNN算法的实现更多是希望同学们熟练掌握R语言中矩阵运算的一些技巧。另外一部分内容是随机模拟的代码流程。随机模拟是统计学研究中的重要工具，通常用于验证某一方法的可行性或比较多种方法的差异。某种意义上讲，随机模拟就是统计学的实验。因此，实验设计的一些思想同样可以用于随机模拟的设计。
+
+## KNN算法
+
+### KNN算法的理论
+
+K最邻近（KNN，K-NearestNeighbor）算法是数据挖掘中最简单的方法之一。所谓K最近邻，就是K个最近的邻居的意思，说的是每个样本都可以用它最接近的K个邻近值来代表。
+其思想是，在特征空间中，距离相近的样本应当有着相似的特性。在分类问题中，这表现为相同的类别，在回归问题中，这表现为因变量相近的取值。
+
+在实际操作中，我们需要首先确定三个要素：
+
+- K的取值，也就是用于预测的邻近点的个数
+
+- 距离的度量方式，常用的距离包括欧氏距离、曼哈顿距离等
+
+- 决策方式：分类问题通常采用投票法，即预测值为K个邻近点类别的众数；回归问题的预测值通常使用K个邻近点的平均数
+
+算法步骤：
+
+- 输入：训练数据、待预测点；输出：待预测点的预测值
+
+1. 计算待预测点与训练数据中所有点的距离
+
+2. 找到距离最近的K个点，并记录他们的因变量取值
+
+3. 依据给定的决策方式，使用K个点的因变量取值，计算预测值
+
+### KNN算法的R语言实践
+
+**生成数据**
+
+```{r}
+library(MASS)
+set.seed(1)
+X = mvrnorm(1000,c(0,0.5,-0.5),matrix(c(
+  1,0.5,0.25,
+  0.5,1,0.5,
+  0.25,0.5,1
+),3,3))
+Y = X %*% c(0.5,0.3,-0.6) + rnorm(1000)
+```
+
+**计算距离**
+
+```{r}
+distance_matrix = apply(X,1,function(x){
+  colSums((t(X) - x)**2)
+})
+# diag(distance_matrix)
+```
+
+**寻找邻近点并计算预测结果**
+
+```{r}
+K = 10
+yhat = rep(NA,1000)
+for(i in 1:1000){
+  # i = 1
+  distance_i = distance_matrix[,i]
+  thre = sort(distance_i)[K+1]
+  neighboor = which(distance_i <= thre)
+  length(neighboor)
+  neighboor = neighboor[neighboor != i]
+  yhat[i] = mean(Y[neighboor])
+}
+```
+
+**打包成函数**
+
+```{r}
+KNN_pre = function(in.X,in.Y,para.K = 10){
+  n = length(in.Y)
+  
+  distance_matrix = apply(in.X,1,function(x){
+    colSums((t(in.X) - x)**2)
+  })
+  
+  yhat = rep(NA,n)
+  for(i in 1:n){
+    distance_i = distance_matrix[,i]
+    thre = sort(distance_i)[para.K+1]
+    neighboor = which(distance_i <= thre)
+    neighboor = neighboor[neighboor != i]
+    yhat[i] = mean(in.Y[neighboor])
+  }
+  
+  return(yhat)
+}
+yhat_KNN = KNN_pre(X,Y,10)
+mean((yhat_KNN - Y)**2)
+```
+## 随机模拟
+
+### 与线性模型对照
+
+对照线性模型的下，估计的MSE：
+
+```{r}
+dt = as.data.frame(cbind(X,Y))
+colnames(dt) = c(paste0("X",1:ncol(X)),"Y")
+md = lm(Y~.,data = dt)
+yhat_lm = predict(md)
+mean((yhat_lm - Y)**2)
+```
+
+与前一小节KNN算法的结果相比，不难发现线性模型在预测准确性上的表现更好。但单次实验的结果显然不足以支撑这一结论，我们通常需要重复多次实验取平均值，乃至于计算相应的置信区间。不难发现，重复实验（测量）的思想和统计中统计推断的想法息息相关。我们在下面将重复100次，并对比100次结果中，两种方法的预测误差的变化。
+
+```{r include=FALSE}
+mse_KNN = list()
+mse_lm = list()
+for(b in 1:100){
+  # cat(b,"\t")
+  set.seed(b)
+  X = mvrnorm(1000,c(0,0.5,-0.5),matrix(c(
+    1,0.5,0.25,
+    0.5,1,0.5,
+    0.25,0.5,1
+  ),3,3))
+  Y = X %*% c(0.4,0.6,-1) +  rnorm(1000)
+  yhat_KNN = KNN_pre(X,Y,10)
+  mse_KNN[[b]] = mean((yhat_KNN - Y)**2)
+  
+  dt = as.data.frame(cbind(X,Y))
+  colnames(dt) = c(paste0("X",1:ncol(X)),"Y")
+  md = lm(Y~.,data = dt)
+  yhat_lm = predict(md)
+  mse_lm[[b]] = mean((yhat_lm - Y)**2)
+}
+```
+
+```{r}
+print(mean(unlist(mse_KNN)));print(mean(unlist(mse_lm)))
+boxplot(unlist(mse_KNN),unlist(mse_lm))
+```
+
+至此，我们可以比较有底气地说明，在该设定下，线性模型的预测能力优于KNN方法。
+
+### 随机模拟的基本流程
+
+从上述代码中，我们可以得到随机模拟的基本流程和基本原则。
+
+1. `mse_KNN = list()` 需要有一个容器，用于储存每一轮实验的结果
+
+2. `for(b in 1:100){}` 使用 `for` 循环来重复实验
+
+3. `cat(b,"\t")` 每一轮实验开始前打印当前实验的轮数，这有助于我们了解代码的运行进度
+
+4. `set.seed(b)` 设置随机数种子。当每一轮实验存在随机性时，我们应当在实验开始前固定随机数种子，这将保证结果的**可复现性**。
+
+5. 生成数据 `X`, `Y`。
+
+6. 使用不同的方法分析数据，并计算预先指定的指标（例如此处的MSE），而后将指标保存
+
+7. `mean(unlist(mse_KNN)` or `boxplot(unlist(mse_KNN),unlist(mse_lm))` 使用尽可能直观的做法来展示方法之间的差异
+
+## 作业
+
+考虑如下设定：
+$$
+X \sim N(\mu,\Sigma)
+\\
+\mu = c(0,0.5,-0.5)
+\\
+\Sigma = \begin{bmatrix}
+1 & 0.5 & 0.25 \\
+0.5 & 1 & 0.5 \\
+0.25 & 0.5 & 1
+\end{bmatrix}
+\\
+Y = \sin(X_1) + 0.6X_2 - X_3 + \epsilon
+\\
+\epsilon \sim N(0,1)
+$$
+使用随机模拟的方法判断KNN和线性模型在该设定下的预测能力的差异。

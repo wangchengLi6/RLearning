@@ -1,0 +1,434 @@
+---
+title: "L10 基于梯度的优化"
+author: "Wangcheng Li"
+date: "`r Sys.Date()`"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+    toc: true
+    number_sections: true
+vignette: >
+  %\VignetteIndexEntry{Vignette Title}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# 基于梯度的优化方法（L10）
+
+优化问题是统计学学习中经常会碰到的问题，因此了解基本的优化原理并掌握优化算法的编程是有必要的。通常，统计中遇到的优化问题的求解均基于泰勒展开和梯度的思想，因此在这里简要介绍一些基于梯度的优化方法和R语言中的代码实现。
+
+## 优化问题
+
+优化问题的一般形式是
+$$
+\min f(x), \mbox{ s.t. } x \in \mathcal{X}.
+$$
+这里一般称 $f(x)$ 为目标函数，$\mathcal{X}$为可行域或约束条件。如果取 $\mathcal{X} = \mathcal{R}^d$，则认为该问题是一个无约束问题，否则认为该问题是一个有约束问题。约束条件的通常形式是 $c_i(x) \le 0$ 或 $c_i(x)=0$，因此 $\mathcal{X} = \{x \in \mathcal{R}^d: c_i(x) \le 0,i = 1,\cdots,s\}$。根据不同的性质，可以将优化问题分为不同的类别，例如如果 $f(x)$ 不光滑（即存在不可导点），则称为非光滑优化；如果$x$取值只能为整数，则成为整数优化。最后一个很重要的分类是根据 $f(x)$ 是否为凸函数来区分凸优化和非凸优化。凸优化最大的优点是目标函数要么没有极值点，要么只有一个极值点且极值点就是全局最小值点，这使得我们只需要找极值点即可。
+
+每一类优化问题都有相应的，非常深入的研究，因此在实际问题中，如果遇到新的优化问题，我们通常试图将其转化为已有的优化问题。在统计学习中，大部分面对的优化问题都是凸优化且无约束条件，此时基于梯度或梯度近似的优化方法非常适用。
+
+这里，我们以岭回归为例。最小二乘的目标函数是：
+$$
+\min ||\mathbf{Y} - \mathbf{X}\beta||_2^2 \mbox{, s.t. }\beta \in \mathcal{R}^p.
+$$
+这是一个典型的无约束凸优化问题。而岭回归目标函数的一个形式是有约束的凸优化问题：
+$$
+\min ||\mathbf{Y} - \mathbf{X}\beta||_2^2 \mbox{, s.t. }\beta \in \mathcal{R}^p,||\beta||_2^2 \le s.
+$$
+即约束$\beta$的二范数小于某一阈值$s$。显然，这和我们课上所学习的内容存在差异。事实上，由约束问题的对偶性质我们可以得到上述问题的等价形式：
+$$
+\min ||\mathbf{Y} - \mathbf{X}\beta||_2^2 + \lambda_{s}||\beta||_2^2 \mbox{, s.t. }\beta \in \mathcal{R}^p.
+$$
+即对任意的$s \ge 0$，存在$\lambda \ge 0$，使得两个约束问题等价。而后面一个形式是一个无约束的凸优化，且目标函数光滑，因此非常容易解决。我们在接下来将介绍如何处理这样一个光滑的无约束的凸优化问题。
+
+## 解析解
+
+前面提到，凸优化中的极值点就是全局最小值点，因此只需要寻找目标函数的极值点。由费马定理，函数的极值点导数为零，因此只需要求解函数
+$$
+\nabla f(x) = 0
+$$
+即可。在岭回归的案例中，这一方程有解析解，即
+$$
+\begin{align}
+-2(\mathbf{X}^T(\mathbf{Y}-\mathbf{X}\beta))+2\lambda \beta &= 0
+\\
+(\mathbf{X}^T \mathbf{X} +\lambda) \beta &= \mathbf{X}^T \mathbf{Y}
+\\
+\beta &= (\mathbf{X}^T \mathbf{X} +\lambda)^{-1} \mathbf{X}^T \mathbf{Y}
+\end{align}.
+$$
+示例代码：
+```{r}
+library(MASS)
+Sig = matrix(NA,6,6)
+for(i in 1:6){
+  for(j in 1:6){
+    Sig[i,j] = 0.5**(abs(i-j))
+  }
+}
+Sig[1,2] = 0.95
+Sig[2,1] = 0.95
+
+set.seed(1)
+X = mvrnorm(100,rep(0,6),Sig)
+y = X %*% c(0.5,0,-0.5,0.5,-0.5,0) + rnorm(100)
+
+lam = 0.2
+beta_ridge = solve(t(X)%*%X+lam*diag(rep(1,6)))%*%t(X)%*%y
+print(beta_ridge)
+```
+
+```{r}
+## 展示岭回归提高系数估计稳定性的能力
+reslist = list()
+for(i in 1:100){
+  set.seed(i)
+  X_tmp = mvrnorm(100,rep(0,6),Sig)
+  y_tmp = X_tmp %*% c(0.5,0,-0.5,0.5,-0.5,0) + rnorm(100)
+  md = lm(y_tmp~X_tmp-1)
+
+  lam = 0.2
+  beta_tmp = solve(t(X_tmp)%*%X_tmp+lam*diag(rep(1,6)))%*%t(X_tmp)%*%y_tmp
+  reslist[[i]] = c("lm" = coef(md)[1],"ridge.X1" = beta_tmp[1])
+}
+do.call(rbind,reslist) |> apply(2,var) |> print()
+```
+
+但大多数时候，解析解并不存在，因此我们需要使用一些数值分析的方法来求取近似解(数值解)。下面我们将介绍几种基本的基于迭代方法的数值求解算法。
+
+## 迭代算法和线搜索准则
+
+<center><img src="./picture/L10.jpg" alt = "xxx" style="zoom:50%;"></center>
+
+在优化问题中，一个非常生动的比喻就是下山。以这张图为例，我们希望从起始点走向最低点，一个基本的思路是找到一个可以下山的方向然后往该方向走。由于我们的视野有限（体现在优化问题中就是我们只知道函数的局部信息），因此我们通常的做法是走两步，然后在新的地方寻找新的方向。我们将重复这一步骤，直到我们认为自己已经到了山底（收敛）。这一思想构成了基本的迭代算法，即
+
+- 第k步，我们所处的位置为 $x^{(k)}$
+
+- 此时，我们找到了一个可能的方向 $g_k$
+
+- 沿着 $g_k$ 走一段距离 $\alpha_k$ 到新的点位 $x^{(k+1)} = x^{(k)} + \alpha_k g_k$
+
+并循环往复，直至收敛。
+
+从上述内容，我们不难发现迭代优化算法的基本要素：
+
+- 起始点
+
+- 行进方向
+
+- 行近距离
+
+- 收敛准则
+
+我们一一说明：
+
+**起始点**的选择取决于预先的信息，例如岭回归问题可以用线性回归的解作为起始点，LASSO问题则可以使用岭回归的解作为起始点。如果没有任何信息，则可以以一个固定点（零点）或者随机点（某一正态分布）作为起始点。凸优化问题中起始点的选取对结果的影响较小（但会影响迭代轮数）；而在非凸优化中，不佳的起始点可能使得结果落入某一局部极小值而非全局极小值。
+
+**收敛准则**的常见选择包括 $x^{(k)}$ 与 $x^{(k+1)}$ 的距离小于预先设定的值（例如 $10^{-6}$），即迭代更新的变化已经很小了；或者梯度小于预先设定的值。
+
+**行进方向**：不同的算法的差异大多体现在选取 $g_k$ 的不同，即不同的下降方向。在具体的算法部分我们会简要介绍。
+
+**行近距离**：大多数算法的行近距离（也称为步长、学习率）有着相似的取法。通常可以考虑线性搜索准则，其主要思想是，沿着行进方向找到下降最远的距离。在实际问题中，考虑到运算成本，很多时候也都会选择固定的学习率（例如0.005），或者逐步衰减的学习率（例如一大类的自适应学习率算法）。
+
+<center><img src="./picture/L10-2.png" alt = "xxx" style="zoom:50%;"></center>
+
+## 梯度下降和动量梯度下降
+
+### 基于线性搜索准则的梯度下降
+
+行进方向最基本的思路就是使用当前位置的梯度，因为负梯度方向是当前位置下降最快的方向。基于上述提到的迭代框架，我们考虑如下的迭代算法：
+
+- 设定：对于优化问题 $\min f(x),x\in R^p$，假设 $f(x)$ 处处可微，设起始点为 $x^{(0)}$，设置超参数 $\delta = 0.01$
+
+1. 在第k步的位置为 $x^{(k)}$，计算当前梯度 $\nabla f(x^{(k)})$，考虑负梯度方向 $d_k = -\nabla f(x^{(k)})$
+
+2. 使用线性搜索准则确定步长 $\alpha_k = \arg\min f(x^{(k)}+\alpha d_k),\alpha \in (0,\delta)$
+
+3. 如果 $||x^{(k+1)}-x^{(k)}||_2 \ge 10^{-6}$，重复1-2步。
+
+代码实现如下：
+```{r}
+fde = function(b,X,y,lam){
+  -2*t(X)%*%(y-X%*%b) + 2*lam*b
+}
+fhe = function(b,X,y,lam){
+  2*t(X)%*%X + 2*lam*diag(1,length(b))
+}
+f = function(b,X,y,lam){
+  tmp = y - X%*%b
+  sum(tmp**2)+lam*sum(b**2)
+}
+```
+
+```{r}
+cur_b = coef(lm(y~X-1))
+lr_max = 0.01
+lr_seq = seq(0.1,1,by=0.1)*lr_max
+ct = 0
+repeat{
+  # print(cur_b)
+  dk = -fde(cur_b,X,y,lam)
+  ak = lr_seq[which.min(mapply(lr_seq,FUN = function(x){f(cur_b+x*dk,X,y,lam)}))]
+  new_b = cur_b + ak*dk
+  if(sum((cur_b-new_b)**2)<= 1e-12){ # 可以试着改为1e-10，此时收敛效果较好
+    break
+  }
+  # if(sum(fde(cur_b,X,y,lam)**2)<=1e-4){
+  #   break
+  # }
+  cur_b = new_b
+  ct = ct+1
+}
+top = data.frame("数值解"=cur_b,"解析解"=beta_ridge)
+cat("迭代轮数：",ct,"\n");print(top)
+```
+
+### 固定步长的梯度下降
+
+
+```{r}
+cur_b = coef(lm(y~X-1))
+learning_rate = 0.001
+ct = 0
+repeat{
+  # print(cur_b)
+  new_b = cur_b - learning_rate * fde(cur_b,X,y,lam)
+  if(sum((cur_b-new_b)**2)<= 1e-12){
+    break
+  }
+  # if(sum(fde(cur_b,X,y,lam)**2)<=1e-4){
+  #   break
+  # }
+  cur_b = new_b
+  ct = ct+1
+}
+top = data.frame("数值解"=cur_b,"解析解"=beta_ridge)
+cat("迭代轮数：",ct,"\n");print(top)
+```
+
+
+```{r}
+cur_b = coef(lm(y~X-1))
+learning_rate = 0.005
+ct = 0
+repeat{
+  # print(cur_b)
+  new_b = cur_b - learning_rate * fde(cur_b,X,y,lam)
+  if(sum((cur_b-new_b)**2)<= 1e-12){
+    break
+  }
+  if(sum(cur_b**2)>1e6){
+    break
+  }
+  # if(sum(fde(cur_b,X,y,lam)**2)<=1e-4){
+  #   break
+  # }
+  cur_b = new_b
+  ct = ct+1
+}
+top = data.frame("数值解"=cur_b,"解析解"=beta_ridge)
+cat("迭代轮数：",ct,"\n");print(top)
+```
+
+### 基于动量方法的迭代
+
+基于动量的迭代方法引入了阻力的思想。当我们将一个小球从山上滚下来时，没有阻力的话，它的动量会越来越大。在某些时候，这会导致梯度下降算法无法收敛。但如果下降过程中遇到了阻力，速度就会变小。与梯度下降算法相比，动量方法的唯一区别是下降方向，动量方法的下降方向不仅取决于当前位置的梯度，还取决于上一步迭代的下降方向：
+$$
+d_k = \beta d_{k-1}+ (1-\beta)\nabla f(x^{(k)})
+$$
+
+这就意味着下降方向主要是此前累积的下降方向，并略微偏向当前时刻的下降方向。这样做的好处是，加入的这一项，可以使得梯度方向不变的维度上速度变快，梯度方向有所改变的维度上的更新速度变慢。如此一来就可以加快收敛并减小震荡。通常，超参数 $\beta$ 选取为 $0.9$。代码实现如下：
+
+```{r}
+cur_b = coef(lm(y~X-1))
+learning_rate = 0.01 # 对学习率会好一点，例如改成0.05
+dlr = 0.9
+cur_m = rep(0,6)
+ct = 0
+repeat{
+  cur_m = cur_m*dlr + (1-dlr)* fde(cur_b,X,y,lam)
+  new_b = cur_b - learning_rate * cur_m
+  if(sum((cur_b-new_b)**2)<= 1e-12){
+    break
+  }
+  # if(sum(fde(new_b,X,y,lam)**2)<=1e-4){
+  #   break
+  # }
+  cur_b = new_b
+  ct = ct+1
+}
+top = data.frame("数值解"=cur_b,"解析解"=beta_ridge)
+cat("迭代轮数：",ct,"\n");print(top)
+```
+
+## 牛顿迭代
+
+牛顿迭代法是优化问题中最基本的一种迭代算法，且算法的收敛速度远快于前面的梯度算法，这一优势来源于它使用了二阶导数的信息。牛顿迭代法的思路是求解得分方程，即 $\nabla f(x) = 0$。假定我们已经有了点 $x^{(k)}$，我们将得分函数在极值点 $x_0$ 处的值在 $x^{(k)}$ 的位置做二阶泰勒展开：
+
+$$
+\nabla f(x_0) = \nabla f(x^{(k)}) + \nabla^2f(x^{(k)})(x_0-x^{(k)})
+$$
+
+由于 $\nabla f(x_0) = 0$，因此求解上述方程可以得到 
+
+$$
+x_0 = x^{(k)} - H_k^{-1}\nabla f(x^{(k)})
+$$
+
+其中 $H_k$ 是 $f(x)$ 在 $x^{(k)}$ 处的二阶导数（海塞矩阵）。因此我们可以得到第k步的更新方程 $x^{(k+1)} = x^{(k)} - H_k^{-1}\nabla f(x^{(k)})$，可以认为 $d_k = H_k^{-1}\nabla f(x^{(k)})$，$\alpha_k = 1$。其实现代码如下：
+
+```{r}
+cur_b = coef(lm(y~X-1))
+# cur_b = rep(-10,6)
+ct = 0
+repeat{
+  new_b = cur_b - solve(fhe(cur_b,X,y,lam))%*%fde(cur_b,X,y,lam)
+  if(sum((cur_b-new_b)**2)<=1e-6){
+    break
+  }
+  # if(iter <= max_iters){
+  #   break
+  # }
+  cur_b = new_b
+  ct = ct+1
+}
+top = data.frame("数值解"=cur_b,"解析解"=beta_ridge)
+cat("迭代轮数：",ct,"\n");print(top)
+```
+
+牛顿法可以认为是在寻找下降方向的时候，不仅要求当前时刻的下降速度快，还要求新的时刻下降速度也很快，这是通过二阶导函数来实现的。理论上可以证明，在一定条件下，牛顿迭代法具有二阶收敛速度。（存在某一个常数$C$使得$||x^{(k+1)}-x_0|| \le C ||x^{(k)}-x_0||^p$，若 $p=2$，则称为二阶收敛速率，若$p>1$，则称为超线性的收敛速率）。
+
+## 拟牛顿
+
+牛顿法有着无与伦比的收敛速度，但缺点也很明显：需要计算海塞矩阵和海塞矩阵的逆。这两件事情在高维和大样本量下都有着非常大的计算量，在实践中并不可行。因此，一个改进的思路是使用其它的矩阵来近似海塞阵，或者直接近似海塞阵的逆矩阵。这类方法被称为拟牛顿法，他们在计算量上低于牛顿法，但也有着超线性的收敛速率。我们在这里简单介绍一种拟牛顿法：对称秩一（SR1）方法。
+
+<center><img src="./picture/L10-3.png" alt = "xxx" style="zoom:50%;"></center>
+
+首先，近似一个矩阵我们需要知道应当近似它的什么性质。通常，拟牛顿法考虑的是割线法的推广，与之对应的，牛顿法是切线法的思想。同样考虑梯度 $\nabla f(x)$ 在点 $x^{(k)}$ 处的展开：
+
+$$
+\nabla f(x) = \nabla f(x^{(k)}) + H_k(x-x^{(k)}).
+$$
+
+割线法是指考虑两个点之间的连线，即将上式中的 $x$ 替换为 $x^{(k+1)}$。为了符号的简便性，我们记 $\nabla f(x^{(k)}) = g_k$，进而我们可以得到下面的拟牛顿条件：
+
+$$
+g_{k+1} = g_k + H_k (x^{(k+1)}-x^{(k)})
+\\
+g_{k+1} - g_k = H_k (x^{(k+1)}-x^{(k)})
+$$
+
+记$g_{k+1} - g_k = y_k$, $x^{(k+1)}-x^{(k)} = s_k$，则当我们用正定对称矩阵 $B_k$ 代替 $H_k$ ，那么我们就应当（尽可能）保证 $y_k = B_k s_k$。相应的，如果我们用正定对称矩阵 $G_k$ 代替 $H_k^{-1}$ ，那么我们就应当（尽可能）保证 $G_k y_k = s_k$。
+
+拟牛顿法的思想是使用 $B_k$ 代替 $H_k$ 来实现牛顿迭代法中的更新 $x^{(k+1)}=x^{(k)}-B_k^{-1}g_k$，而后再来更新 $B_k \to B_{k+1}$。那么问题的关键就在于如何更新$B_k \to B_{k+1}$，不同的拟牛顿法的差异也基本上集中在这里。
+
+### SR1
+
+SR1即对称秩一的更新策略是指假定 $B_{k+1} = B_k + vv^T$，其中 $v$ 是一个列向量。由于矩阵 $vv^T$ 的秩为一，因此成为对称秩一的更新策略。那么剩下只需要确定 $v$ 即可。
+
+根据拟牛顿条件，更新后的 $B_{k+1}$ 应当满足：
+$$
+y_k = B_{k+1} s_k.
+$$
+需要注意的是，在第k步更新之后，我们已有的数据为 $x^{(k)}$, $x^{(k+1)}$ 和相应的梯度 $g_k$, $g_{k+1}$。因此上式中 $y_k$ 和 $s_k$ 已知，这样才可能求解 $B_{k+1}$。
+
+代入 $B_{k+1} = B_k + vv^T$，则有
+$$
+\begin{aligned}
+y_k &= B_k s_k + v v^T s_k
+\\
+(y_k-B_ks_k) &= v (v^T s_k)
+\end{aligned}
+$$
+
+由于 $v^T s_k$ 为一个数，因此我们知道 $v$ 和 $y_k - B_k s_k$ 共线。不妨假设 $v = m(y_k - B_k s_k)$，其中 $m$ 为某一常数。带回原式可得：
+
+$$
+\begin{aligned}
+y_k &= B_k s_k + m^2 (y_k - B_k s_k) (y_k - B_k s_k)^T s_k
+\\
+(y_k - B_k s_k) &= m^2 [(y_k - B_k s_k)^T s_k] (y_k - B_k s_k)
+\\
+m^2 &= \frac{1}{(y_k - B_k s_k)^T s_k}
+\end{aligned}
+$$
+
+进而可以得到
+
+$$
+B_{k+1} = B_k + vv^T = B_k + \frac{(y_k - B_k s_k)(y_k - B_k s_k)^T}{(y_k - B_k s_k)^T s_k}.
+$$
+
+有了 $B_k$ 的更新准则后，我们可以将算法归纳如下：
+
+- 初始点 $x^{(0)}$; 初始矩阵 $B_0$; 目标函数 $f(x)$
+
+1. 第k步，有点 $x^{(k)}$ 和矩阵 $B_k$;
+
+2. 更新得到 $x^{(k+1)} = x^{(k)} - B_k^{-1} g_k$;
+
+3. 更新得到 $B_{k+1} = B_k + \frac{(y_k - B_k s_k)(y_k - B_k s_k)^T}{(y_k - B_k s_k)^T s_k} $;
+
+4. 如果 $x^{(k+1)}$ 和 $x^{(k)}$ 之间不满足收敛条件，则重复1-3步。
+
+这里一个讨厌的地方在于仍然要求矩阵 $B_k$ 的逆，这同样会带来较大的计算负担。所幸，SR1方法也有对逆矩阵的更新公式。
+
+假定我们直接考虑矩阵 $G_k = B_k^{-1}$，则 $G_k$ 也有更新公式：
+
+$$
+G_{k+1} = B_{k+1}^{-1} = (B_k + vv^T)^{-1} = G_k + \frac{(s_k - G_k y_k)(s_k - G_k y_k)^T}{(s_k - G_k y_k)^T y_k}.
+$$
+基于 $G_k$ 的更新公式，我们可以同样地给出迭代算法：
+
+- 初始点 $x^{(0)}$; 初始矩阵 $G_0$; 目标函数 $f(x)$
+
+1. 第k步，有点 $x^{(k)}$ 和矩阵 $G_k$;
+
+2. 更新得到 $x^{(k+1)} = x^{(k)} - G_k g_k$;
+
+3. 更新得到 $G_{k+1} = G_k + \frac{(s_k - G_k y_k)(s_k - G_k y_k)^T}{(s_k - G_k y_k)^T y_k}$;
+
+4. 如果 $x^{(k+1)}$ 和 $x^{(k)}$ 之间不满足收敛条件，则重复1-3步。
+
+代码实现如下：
+
+```{r}
+cur_b = coef(lm(y~X-1))
+cur_G = diag(rep(1,6))
+ct = 0
+repeat{
+  # print(cur_b)
+  new_b = cur_b - cur_G%*%fde(cur_b,X,y,lam)
+  yk = fde(new_b,X,y,lam)-fde(cur_b,X,y,lam)
+  sk = new_b - cur_b
+  tmp = sk - cur_G %*% yk
+  new_G = cur_G + (tmp %*% t(tmp))/((t(tmp)%*%yk)[1])
+  if(sum((cur_b-new_b)**2)<= 1e-12){
+    break
+  }
+  cur_b = new_b
+  cur_G = new_G
+  ct = ct+1
+}
+top = data.frame("数值解"=cur_b,"解析解"=beta_ridge)
+cat("迭代轮数：",ct,"\n");print(top)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+

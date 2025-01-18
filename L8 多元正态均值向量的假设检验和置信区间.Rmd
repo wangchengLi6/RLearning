@@ -1,0 +1,483 @@
+---
+title: "L8 多元正态均值向量的假设检验和置信区间"
+author: "Wangcheng Li"
+date: "`r Sys.Date()`"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+    toc: true
+    number_sections: true
+vignette: >
+  %\VignetteIndexEntry{Vignette Title}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r warning=FALSE, include=FALSE}
+library(mixtools)
+library(ellipse)
+library(car)
+library(magrittr)
+library(MASS)
+```
+
+# L8 多元正态均值向量的假设检验和置信区间
+
+## 多元正态总体均值向量的置信域
+
+### 协方差矩阵已知时
+
+简单回顾，当协方差阵已知时，置信域的形式为：
+
+$$
+D = \left\{
+\mu^* \in R^p: n(\bar x- \mu^*)' \Sigma^{-1} (\bar x - \mu^*) \le c_\alpha
+\right\}
+$$
+
+显然，只需要绘制一个椭圆即可。R语言中有大量用于绘制椭圆的函数，他们大多和二元正态分布紧密关联。可选的R包包括 `mixtools` `car` `ellipse` 等，`ggplot2` 包中同样包括了一个函数用于对二元变量绘制相应的椭球。以下作为展示：
+
+```{r}
+## 生成数据并估计均值向量和协方差矩阵
+mu <- c(1, 1)
+Sig <- matrix(c(1, 0.5, 0.5, 1), 2, 2)
+n <- 60
+set.seed(1)
+mv.data <- mvrnorm(n, mu, Sig)
+colnames(mv.data) <- c("X1", "X2")
+mu.hat <- colMeans(mv.data)
+Sig.hat <- cov(mv.data)
+```
+
+```{r}
+## 使用 mixtools包中的ellipse函数绘制椭圆
+plot(mv.data)
+mixtools::ellipse(mu=mu.hat, sigma=Sig, alpha=0.05, col='red')
+# mixtools::ellipse(mu=mu.hat, sigma=Sig, alpha=c(0.05,0.95), col='red')
+points(t(mu.hat), col='red', pch=16)
+#a = mixtools::ellipse(mu=mu.hat, sigma=Sig, alpha=0.05, col='red')
+# plot(a)
+```
+
+```{r}
+## 使用 car 包中的ellipse函数绘制
+n <- nrow(mv.data); p <- ncol(mv.data)
+chi.stat <- sqrt(1/n*qchisq(0.95, p))
+f.stat <-  sqrt((p/n)*((n-1)/(n-p)) * qf(0.95, p, n-p))
+plot(mv.data)
+a = car::ellipse(center=mu.hat, shape=Sig, radius=chi.stat, add=TRUE)
+lines(a)
+```
+
+```{r}
+### 使用 ellipse 包绘制
+n <- nrow(mv.data); p <- ncol(mv.data)
+plot(mv.data)
+ell = ellipse::ellipse(x=Sig, centre=mu.hat, level=0.95)
+lines(ell)
+```
+
+### 椭圆的绘制
+
+在介绍协方差矩阵未知时的情况前，我们首先介绍如何绘制椭圆。考虑椭圆的解析式
+
+$$
+(\mathbf{x} - \mu)' A (\mathbf{x} - \mu) = r^2, \mathbf{x} = (x_1,x_2)
+$$
+
+即一个二次型。绘制椭圆的一个简单粗暴的思路是计算 $x_1$ 的取值范围，并计算所有的 $x_1$ 对应的 $x_2$ 的取值。显然这过于复杂。一个简单的算法是先计算一个圆的坐标，再变换成为相应的椭圆。思路如下：
+
+$$
+(A^{\frac{1}{2}} (\mathbf{x} - \mu))' (A^{\frac{1}{2}} (\mathbf{x} - \mu)) = r^2.
+$$
+
+记 $\mathbf{y} = A^{\frac{1}{2}} (\mathbf{x} - \mu)$ ，则 $\mathbf{y} ' \mathbf{y} = r^2$， 即一个圆的坐标。使用极坐标的思路来计算绘制圆所需的点的坐标，即在 $(0,2\pi)$ 间等距选取若干个点 $\theta_1,\cdots,\theta_s$，进而计算 $y_1 = r\cos(\theta_i), y_2 = r \sin(\theta_i)$。而后做变换
+
+$$
+\mathbf{x}_i = A^{-\frac{1}{2}}(\mathbf{y}_i + \mu)
+$$
+
+即可。示范如下：
+
+```{r}
+alpha = 0.05
+r = sqrt(qchisq(1 - alpha,2)/n)
+sig_A = solve(Sig)
+sqrtSig = sig_A %>% solve() %>% eigen() %$% (vectors %*% diag(sqrt(values)))
+
+ang = seq(0,2*pi,length.out = 100)
+yptc = cbind(cos(ang)*r,sin(ang)*r)
+xptc = t((sqrtSig %*% t(yptc)) + mu.hat)
+plot(mv.data)
+mixtools::ellipse(mu=mu.hat, sigma=Sig/n, alpha=0.05, col='red')
+lines(xptc,col = 3)
+```
+
+```{r}
+plotEllipse = function(r,sig_A,center){
+  sqrtSig = sig_A %>% solve() %>% eigen() %$% (vectors %*% diag(sqrt(values)))
+  ang = seq(0,2*pi,length.out = 100)
+  yptc = cbind(cos(ang)*r,sin(ang)*r)
+  xptc = t((sqrtSig %*% t(yptc)) + center)
+  return(xptc)
+}
+alpha = 0.05
+a = plotEllipse(sqrt(qchisq(1 - alpha,2)/n),solve(Sig),mu.hat)
+plot(mv.data)
+lines(a,col = 2)
+```
+
+
+### 协方差矩阵未知时
+
+简单回顾一下，协方差矩阵未知时，计算均值向量的置信域仍然具有二次型形式如下：
+
+$$
+T^2 = n(\bar{x} - \mu)' S^{-1} (\bar{x}- \mu) \sim T^2(p,n-1)
+\\
+D = \left\{
+\mu^* \in R^p : \frac{n(n-p)}{p(n-1)} (\mu^* - \bar{x})' S^{-1} (\mu^* - \bar{x}) \le c_\alpha^*
+\right\}.
+$$
+
+区别只在于使用样本协方差矩阵代替真实协方差矩阵，使用 F 分布代替卡方分布来选取分位点。R语言中也有一些函数可以使用样本估计得到的均值向量和协方差矩阵自动绘制相应的椭圆。下面做简单介绍。
+
+```{r}
+## 但绘制的是什么呢
+mv.data %>% as.data.frame() %$% dataEllipse(X1, X2, levels=0.95, fill=FALSE)
+```
+
+
+```{r}
+## ggplot2 中也提供了一个类似的函数 它调用了dataEllipse函数计算所需绘制的点
+# stat_ellipse()
+library(ggplot2)
+qplot(data=data.frame(mv.data), x=X1, y=X2) +
+  stat_ellipse(level=0.95, color="red") +
+  geom_point(aes(x=mu.hat[1], y=mu.hat[2]), color="red", size=2) +
+  theme_bw()
+```
+
+```{r}
+## 最后来看自行绘制
+sampleCov = cov(mv.data)
+n = nrow(mv.data); p = ncol(mv.data)
+r1 = sqrt(qf(0.95,p,n-p)*p*(n-1)/(n*(n-p)))
+plot(mv.data)
+ep1 = plotEllipse(r1,solve(sampleCov),mu.hat)
+lines(ep1)
+```
+
+```{r}
+## 对比协方差阵已知和未知时，置信域的差异
+r2 = sqrt(qchisq(0.95,2)/n)
+plot(mv.data)
+ep1 = plotEllipse(r1,solve(sampleCov),mu.hat)
+ep2 = plotEllipse(r2,solve(Sig),mu.hat)
+lines(ep1,col = 2)
+lines(ep2,col = 3)
+
+```
+
+
+## 两种同时置信区间的绘制
+
+考虑 $\mathbf{a}'\mu$ 的同时置信区间，即对所有的 $\mathbf{a} \in R^2$, 有 $Pr(\forall \mathbf{a}, \mathbf{a}'\mu \in C) \ge 1-\alpha$。
+
+### 基于F分布
+
+回顾课件中关于同时置信区间的第一种构造方法，其结论为
+
+$$
+\mathbf{a}' \bar{x} \mp \sqrt{
+\frac{p(n-1)}{n(n-p)} F_{p,n-p}(\alpha) \mathbf{a}' S \mathbf{a}
+}.
+$$
+
+考虑 $\mathbf{a}_i$ 是除了第i位为1，其余为0的向量，则可以构造 $\mu_1$ 和 $\mu_2$ 的同时置信区间。
+
+```{r}
+## mu1 和 mu2 的置信区间长度
+n = nrow(mv.data);p = ncol(mv.data)
+lb = p*(n-1)/(n*(n-p))*qf(0.95,p,n-p)
+l1 = sqrt(lb*sampleCov[1,1])
+l2 = sqrt(lb*sampleCov[2,2])
+```
+
+进而绘制在图上：
+
+```{r}
+plot(mv.data)
+points(mu.hat[1],mu.hat[2],cex = 1.5,pch = 16,col = 2)
+pcord = c(mu.hat[1] - l1,mu.hat[1]+l1,mu.hat[2]-l2,mu.hat[2]+l2)
+pcord2 = matrix(c(pcord[1],pcord[3],
+                  pcord[1],pcord[4],
+                  pcord[2],pcord[4],
+                  pcord[2],pcord[3],
+                  pcord[1],pcord[3]),5,2,byrow = T)
+lines(pcord2,col = 2)
+```
+
+### Bonferroni调整
+
+如果我们只考虑有限个 $\mathbf{a}$ 的同时检验，则 Bonferroni 调整是更合适的选择。我们这里同样只考虑 $mu_1$ 和 $mu_2$ 的同时置信区间。回顾课件可知
+
+$$
+\bar{x}_i \mp t_{n-1}(\frac{\alpha}{2p})*\sqrt{\frac{s_{ii}}{n}}
+$$
+
+其中 $s_{ii}$ 是样本协方差矩阵的 $(i,i)$ 元。
+
+```{r}
+l1 = qt(1-0.05/(2*p),n-1)*sqrt(sampleCov[1,1]/n)
+l2 = qt(1-0.05/(2*p),n-1)*sqrt(sampleCov[2,2]/n)
+```
+
+同样可以绘制
+
+```{r}
+plot(mv.data)
+points(mu.hat[1],mu.hat[2],cex = 1.5,pch = 16,col = 2)
+pcord = c(mu.hat[1] - l1,mu.hat[1]+l1,mu.hat[2]-l2,mu.hat[2]+l2)
+pcord2 = matrix(c(pcord[1],pcord[3],
+                  pcord[1],pcord[4],
+                  pcord[2],pcord[4],
+                  pcord[2],pcord[3],
+                  pcord[1],pcord[3]),5,2,byrow = T)
+lines(pcord2,col = 2)
+```
+
+```{r}
+plotRec = function(l1,l2,center){
+  pcord = c(center[1] - l1,center[1]+l1,center[2]-l2,center[2]+l2)
+  pcord2 = matrix(c(pcord[1],pcord[3],
+                    pcord[1],pcord[4],
+                    pcord[2],pcord[4],
+                    pcord[2],pcord[3],
+                    pcord[1],pcord[3]),5,2,byrow = T)
+  return(pcord2)
+}
+```
+
+### 绘制对比
+
+```{r}
+
+mu <- c(1, 1)
+Sig <- matrix(c(1, 0.5, 0.5, 1), 2, 2)
+n <- 30
+set.seed(1)
+mv.data <- mvrnorm(n, mu, Sig)
+colnames(mv.data) <- c("X1", "X2")
+mu.hat <- colMeans(mv.data)
+
+sampleCov = cov(mv.data)
+n = nrow(mv.data); p = ncol(mv.data)
+r_unk = sqrt(qf(0.95,p,n-p)*p*(n-1)/(n*(n-p)))
+r_k = sqrt(qchisq(0.95,2)/n)
+ep_unk = plotEllipse(r_unk,solve(sampleCov),mu.hat) # 协方差阵未知
+ep_k = plotEllipse(r_k,solve(Sig),mu.hat) # 协方差阵已知
+plot(mv.data,xlim = c(0,2),ylim = c(0,2))
+points(mu.hat[1],mu.hat[2],cex = 1.5,pch = 16,col = 2)
+lines(ep_unk,col = 2)
+lines(ep_k,col = 3)
+
+# 基于F分布的同时置信区间
+lb = p*(n-1)/(n*(n-p))*qf(0.95,p,n-p)
+l_F1 = sqrt(lb*sampleCov[1,1])
+l_F2 = sqrt(lb*sampleCov[2,2])
+rec_F = plotRec(l_F1,l_F2,mu.hat)
+
+# 基于Bonferroni调整的同时置信区间
+l_B1 = qt(1-0.05/(2*p),n-1)*sqrt(sampleCov[1,1]/n)
+l_B2 = qt(1-0.05/(2*p),n-1)*sqrt(sampleCov[2,2]/n)
+rec_B = plotRec(l_B1,l_B2,mu.hat)
+lines(rec_F,col = 2)
+lines(rec_B,col = 3)
+
+```
+
+
+## 单总体的均值检验
+
+### 协方差矩阵已知时
+
+这一节，我们希望对多元正态变量 $X \sim N(\mu,\Sigma)$ 检验原假设:
+
+$$
+H_0 : \mu = 0.
+$$
+
+一个适合用于构造检验统计量的指标是样本均值，显然样本均值偏离 $0$ 的距离较大时，$H_0$ 成立的可能性就越低。基于样本均值构造统计量：
+
+$$
+T_n = n \bar x ' \Sigma^{-1} \bar x \sim \chi^2_p, \mbox{ under }H_0.
+$$
+
+进而可以计算p value为
+
+$$
+p = \mbox{Pr}(\chi^2_p \ge T_n).
+$$
+
+代码实现如下：
+
+```{r}
+mu = c(0,0)
+Sig = matrix(c(1,0.6,0.6,1),2,2)
+n = 50
+mv.data = mvrnorm(n,mu,Sig)
+xbar = matrix(colMeans(mv.data),ncol = 1)
+Tn = n*t(xbar) %*% solve(Sig) %*% xbar
+pval = pchisq(Tn,2,lower.tail = F)
+```
+
+```{r}
+## 如何考虑检验是不是可靠呢（一类错误率是否被控制，二类错误率是否足够低）
+mu = c(0,0)
+Sig = matrix(c(1,0.6,0.6,1),2,2)
+n = 50
+reslist = list()
+for(i in 1:1000){
+  set.seed(i)
+  mv.data = mvrnorm(n,mu,Sig)
+  xbar = matrix(colMeans(mv.data),ncol = 1)
+  Tn = n*t(xbar) %*% solve(Sig) %*% xbar
+  pval = pchisq(Tn,2,lower.tail = F)
+  reslist[[i]] = pval
+}
+hist(unlist(reslist))
+mean(unlist(reslist) <= 0.05)
+```
+
+```{r}
+## 再考虑备择假设下的情况
+n = 50
+mu = c(3,3) * sqrt(n)
+Sig = matrix(c(1,0.6,0.6,1),2,2)
+reslist = list()
+for(i in 1:1000){
+  set.seed(i)
+  mv.data = mvrnorm(n,mu,Sig)
+  xbar = matrix(colMeans(mv.data),ncol = 1)
+  Tn = n*t(xbar) %*% solve(Sig) %*% xbar
+  pval = pchisq(Tn,2,lower.tail = F)
+  reslist[[i]] = pval
+}
+mean(unlist(reslist) <= 0.05)
+```
+
+### 协方差矩阵未知时
+
+协方差矩阵未知时，只需要使用样本协方差矩阵替代，并使用 F 分布分位数计算即可，此处不再重复。
+
+## 两总体均值检验
+
+### 协方差阵已知时
+
+假定随机向量 $X \sim N(\mu_x,\Sigma_x)$, $Y \sim N(\mu_y, \Sigma_y)$。检验 $\mu_x = \mu_y$ 的直观思路是检查 $\bar{x}$ 与 $\bar{y}$ 的距离 $|\bar x\bar y|$。由于 $X$、$Y$ 均为多元正态变量，则容易构造检验统计量：
+
+$$
+\bar x - \bar y \sim N(0, \frac{\Sigma_x}{n_x}+\frac{\Sigma_y}{n_y}).
+$$
+
+进而构造 $T_n = (\bar x - \bar y)' (\frac{\Sigma_x}{n_x}+\frac{\Sigma_y}{n_y})^{-1} (\bar x - \bar y)$ 即可，其服从卡方分布，自由度为 $p$.
+
+### 协方差阵未知（但相等）时
+
+在协方差矩阵未知时，我们需要使用样本协方差矩阵替代 $\Sigma$。为了保证统计量的精确分布，我们要求两个多元正态变量具有相同的协方差矩阵。回顾课件，我们可以看到最终构造的检验统计量为：
+
+$$
+\frac{(n+m-2)nm}{n+m}
+(\bar x - \bar y)'(V_1 + V_2)^{-1} (\bar x - \bar y)'
+\sim T^2(p,n+m-2) = 
+\frac{(n+m-2)p}{n+m-p-1}
+F(p,n+m-p-1), \mbox{ under }H_0.
+$$
+
+代码实现如下：
+
+```{r}
+mux = c(0,0)
+muy = c(0,0)
+Sigx = Sigy = matrix(c(1,0.5,0.5,1),2,2)
+
+n0 = 50
+mv.x = mvrnorm(n0*0.8,mux,Sigx)
+mv.y = mvrnorm(n0*1.2,muy,Sigy)
+n = nrow(mv.x); m = nrow(mv.y); p = ncol(mv.x)
+mudiff = matrix(colMeans(mv.x) - colMeans(mv.y),ncol = 1)
+V1 = t(mv.x) %*% mv.x
+V2 = t(mv.y) %*% mv.y
+Fn = ((n+m-2)-p+1)/p*n*m/(n+m)* t(mudiff) %*% solve(V1+V2) %*% mudiff
+pval = pf(Fn,2,n+m-p-1,lower.tail = F)
+```
+
+
+```{r}
+
+n0 = 50
+mux = c(0,0)
+muy = c(0,0) /sqrt(n0)
+Sigx = Sigy = matrix(c(1,0.5,0.5,1),2,2)
+
+reslist = list()
+for(i in 1:1000){
+  set.seed(i)
+  mv.x = mvrnorm(n0*0.8,mux,Sigx)
+  mv.y = mvrnorm(n0*1.2,muy,Sigy)
+  n = nrow(mv.x); m = nrow(mv.y); p = ncol(mv.x)
+  mudiff = matrix(colMeans(mv.x) - colMeans(mv.y),ncol = 1)
+  V1 = t(mv.x) %*% mv.x
+  V2 = t(mv.y) %*% mv.y
+  Fn = ((n+m-2)-p+1)/p*n*m/(n+m)* t(mudiff) %*% solve(V1+V2) %*% mudiff
+  pval = pf(Fn,2,n+m-p-1,lower.tail = F)
+  reslist[[i]] = pval
+}
+hist(unlist(reslist))
+mean(unlist(reslist) <= 0.05)
+```
+
+
+```{r}
+mux = c(0,0)
+muy = c(0,0)
+Sigx = Sigy = matrix(c(1,0.5,0.5,1),2,2)
+
+n0 = 50
+mv.x = mvrnorm(n0*0.8,mux,Sigx)
+mv.y = mvrnorm(n0*1.2,muy,Sigy)
+n = nrow(mv.x); m = nrow(mv.y); p = ncol(mv.x)
+mudiff = matrix(colMeans(mv.x) - colMeans(mv.y),ncol = 1)
+V1 = t(mv.x) %*% mv.x
+V2 = t(mv.y) %*% mv.y
+Fn = ((n+m-2)-p+1)/p*n*m/(n+m)* t(mudiff) %*% solve(V1+V2) %*% mudiff
+pval = pf(Fn,2,n+m-p-1,lower.tail = F)
+```
+
+可以简单看一下当协方差矩阵不同时，该检验的表现。
+
+```{r}
+n0 = 50
+mux = c(0,0)
+muy = c(0,0) /sqrt(n0)
+Sigx = Sigy = matrix(c(1,0.5,0.5,1),2,2)
+Sigy = matrix(c(1.5,0.5,0.5,1.2),2,2)
+
+reslist = list()
+for(i in 1:1000){
+  set.seed(i)
+  mv.x = mvrnorm(n0*0.8,mux,Sigx)
+  mv.y = mvrnorm(n0*1.2,muy,Sigy)
+  n = nrow(mv.x); m = nrow(mv.y); p = ncol(mv.x)
+  mudiff = matrix(colMeans(mv.x) - colMeans(mv.y),ncol = 1)
+  V1 = t(mv.x) %*% mv.x
+  V2 = t(mv.y) %*% mv.y
+  Fn = ((n+m-2)-p+1)/p*n*m/(n+m)* t(mudiff) %*% solve(V1+V2) %*% mudiff
+  pval = pf(Fn,2,n+m-p-1,lower.tail = F)
+  reslist[[i]] = pval
+}
+hist(unlist(reslist))
+mean(unlist(reslist) <= 0.05)
+```
